@@ -1,0 +1,10 @@
+{
+  "name": "competitor-leads",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Local web app: drop a Semrush backlink export, scrape email/phone/socials/name/company per source, view sortable best-first table, export CSV/JSON",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

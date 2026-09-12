@@ -1,0 +1,12 @@
+# ── Data / PII — NEVER commit (real people's names, emails, phones) ──
+*.csv
+*.ndjson
+*.json
+*.db
+*.html
+lists/
+node_modules/
+
+# keep the project manifest (overrides *.json above)
+!package.json
+!package-lock.json
