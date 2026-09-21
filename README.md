@@ -1,335 +1,306 @@
 # Lead Enricher
 
-A local web app that turns a **Semrush "Backlink Audit" export** into an
-enriched, contact-ready lead list. Drop the spreadsheet in your browser, and the
-tool visits every referring website and scrapes **email, phone, social handles,
-name, and company** — then shows you a sortable, best-first table you can export
-to CSV or JSON.
+A **local, single-machine web app** for building contact-ready lead lists. It has two independent modes:
 
-Built for finding people who already link to your competitors (Topmate,
-Calendly, Cal.com, etc.) so you can pitch them your product.
+1. **Google Maps mode** — systematically sweep a city for a business category (dentists, lawyers, gyms, anything) across a **City × Area × Query** matrix, deduplicate to one row per business, enrich each with website/email/social signals, score it, and export CSV/JSON. Backed by the open-source [`gosom/google-maps-scraper`](https://github.com/gosom/google-maps-scraper) running in **Docker**.
+2. **Backlink mode** — drop a Semrush "Backlink Audit" export and the tool visits each referring site and scrapes email/phone/socials/name/company. Built for finding people who already link to your competitors.
+
+Everything runs on your own PC. No accounts, no API keys, no data leaves your machine except the scraper's own requests to public pages.
 
 ---
 
 ## Table of contents
 
-- [What it does](#what-it-does)
+- [What you get](#what-you-get)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
-- [How the pipeline works](#how-the-pipeline-works)
-- [The interface](#the-interface)
-- [Output columns](#output-columns)
-- [Status values](#status-values)
-- [Configuration](#configuration)
-- [How scraping works (and its limits)](#how-scraping-works-and-its-limits)
-- [Data storage & resume](#data-storage--resume)
+- [Google Maps mode](#google-maps-mode)
+  - [How the search matrix works](#how-the-search-matrix-works)
+  - [Running a job (UI)](#running-a-job-ui)
+  - [Running a job (API)](#running-a-job-api)
+  - [Output columns](#output-columns)
+  - [Deduplication](#deduplication)
+  - [Enrichment flags](#enrichment-flags)
+  - [Scoring](#scoring)
+- [Performance & load tuning](#performance--load-tuning)
+- [Backlink mode](#backlink-mode)
 - [Architecture](#architecture)
 - [API reference](#api-reference)
+- [Data storage & resume](#data-storage--resume)
 - [Troubleshooting](#troubleshooting)
+- [Tests](#tests)
 - [Legal & etiquette](#legal--etiquette)
 
 ---
 
-## What it does
+## What you get
 
-1. You export **referring pages** from a Semrush Backlink Audit (the CSV/XLSX
-   with columns like `Source url`, `Target url`, `Anchor`, `Page ascore`).
-2. You drop that file onto the web page. The browser parses it (no upload of a
-   huge file to the server — it's read locally with SheetJS) and auto-detects
-   the **Source url** column.
-3. The server **dedupes by domain**, remembers which competitor(s) each source
-   links to, and classifies each source as a scrapable website or a login-walled
-   social profile.
-4. It **visits every website** — homepage plus `/contact`, `/about`, `/team`,
-   and the footer — and extracts contact details.
-5. Results stream into a **live table**, sorted best-first (rows with email +
-   phone on top). Export to **CSV** or **JSON** anytime.
-6. Everything is saved to a local SQLite file, so you can **stop and resume** —
-   already-scraped domains are skipped on the next run.
+- **Systematic geographic coverage** — not "search once", but every Area × Query cell, tracked and resumable.
+- **One row per business** — six-stage dedup collapses the same shop found under many queries/areas into a single lead, while keeping a count of where it was discovered.
+- **Enrichment** — visits each lead's website to confirm email, booking links, WhatsApp, and social presence.
+- **Configurable scoring** — weighted score with human-readable reasons, tuned in a JSON file.
+- **Coverage report** — per-area counts, totals, duplicates removed, error count.
+- **CSV / JSON export** — a clean sales view, or the full raw record.
+- **Resume** — kill it, reboot, restart the job; it picks up exactly where it stopped.
 
 ---
 
 ## Requirements
 
-- **Node.js ≥ 22.5** (uses the built-in `node:sqlite` — no native modules to
-  compile). Check with `node -v`. This machine runs v24, which is fine.
-- A modern browser (Chrome/Edge/Firefox).
-- Internet access (to scrape sites and to load the SheetJS library from CDN).
+| Need | Why | Notes |
+|---|---|---|
+| **Node.js ≥ 22.5** | runs the app; uses the built-in `node:sqlite` | no `npm install` needed — zero runtime deps |
+| **Docker** | runs the Google Maps scraper | Docker Desktop on Windows/Mac, or Docker Engine on Linux. **Only needed for Google Maps mode.** |
 
-**No `npm install` needed** — the app has zero runtime dependencies.
+Check versions:
+
+```bash
+node --version   # v22.5.0 or higher
+docker --version
+```
+
+The app has **no npm dependencies** — it uses Node's standard library only (including the experimental `node:sqlite`). Cloning and running is enough.
 
 ---
 
 ## Quick start
 
 ```bash
-cd "D:/My Development/competitor-leads"
-npm start
+git clone <your-repo-url> lead-enricher
+cd lead-enricher
+
+# 1. Pull the Google Maps scraper image (one time, ~few hundred MB)
+docker pull gosom/google-maps-scraper
+
+# 2. Start the app
+node server.mjs
 ```
 
-Then open **http://localhost:5178** and:
+Open **http://localhost:5178** in your browser.
 
-1. Drag your `.xlsx` / `.csv` onto the drop zone (or click to pick).
-2. Wait for it to say `N unique sources (M to scrape)`.
-3. Click **Start scraping**.
-4. Watch the table fill. Click column headers to sort, type in the filter box to
-   search.
-5. Click **CSV** or **JSON** to download.
+Pick a **Source** at the top:
+- **Google Maps** → the matrix UI (city, areas, queries, cap).
+- **Backlink** → the Semrush upload UI.
 
-Kill the server (`Ctrl+C`) whenever — re-run `npm start` and click **Start
-scraping** again to resume where it left off.
+To start the scraper without Docker Desktop's GUI, just make sure the Docker daemon is running (`docker ps` should work).
 
 ---
 
-## How the pipeline works
+## Google Maps mode
 
+### How the search matrix works
+
+You give three things:
+
+- **City** — e.g. `Nagpur`
+- **Areas** — a list of neighbourhoods, e.g. `Dharampeth`, `Sadar`, `Civil Lines`…
+- **Queries** — search terms for one category, e.g. `Dentist`, `Dental clinic`, `Orthodontist`…
+
+The app builds one **cell** per `Area × Query` pair and runs each as a gosom search like `Dentist in Dharampeth, Nagpur`. So **40 areas × 12 queries = 480 cells**. Each cell returns up to **cap** businesses (default 60; 30 is a good lean setting).
+
+Every cell's status (`pending` / `ok` / `error`) is stored, which is what makes a job **resumable** — restarting skips completed cells.
+
+> The tool is **category-agnostic**. Nothing is hardcoded to any industry — you supply the queries.
+
+### Running a job (UI)
+
+1. Source → **Google Maps**.
+2. Fill **City**, paste **Areas** (one per line) and **Queries** (one per line), set **cap**.
+3. **Start**. The progress panel shows cells done / total, unique leads, duplicates, errors — live over SSE.
+4. When done (or mid-run), **Export CSV / JSON**, or **XLSX** (built in-browser).
+5. **Resume Last** re-attaches to the newest job and continues it.
+
+### Running a job (API)
+
+```bash
+# Create a job -> returns { "job_id": N, "total_cells": M }
+curl -s -X POST http://localhost:5178/api/gmaps/jobs \
+  -H 'content-type: application/json' \
+  -d '{
+    "city": "Nagpur",
+    "areas": ["Dharampeth","Sadar","Civil Lines"],
+    "queries": ["Dentist","Dental clinic","Orthodontist"],
+    "cap": 30
+  }'
+
+# Start it
+curl -X POST http://localhost:5178/api/gmaps/jobs/1/start
+
+# Poll status + coverage
+curl -s http://localhost:5178/api/gmaps/jobs/1
+
+# Export
+curl -s "http://localhost:5178/api/gmaps/export.csv?job_id=1" -o leads.csv
+curl -s "http://localhost:5178/api/gmaps/export.csv?job_id=1&raw=1" -o leads_raw.csv
 ```
- ┌─────────────┐   drop file    ┌──────────────┐   POST rows    ┌──────────────┐
- │  Semrush     │ ─────────────▶ │   Browser     │ ─────────────▶ │   Server      │
- │  .xlsx/.csv  │                │  (SheetJS      │  /api/ingest   │  (node:sqlite │
- └─────────────┘                │   parses it)   │                │   dedupes)    │
-                                └──────────────┘                └──────┬───────┘
-                                                                        │ Start scraping
-                                        ┌───────────────────────────────▼──────────┐
-                                        │  Scrape pool (30 parallel workers)         │
-                                        │  homepage → /contact /about /team → footer │
-                                        │  extract email / phone / socials / name    │
-                                        └───────────────────────────────┬──────────┘
-                                                                        │ SSE stream
- ┌──────────────┐   CSV / JSON   ┌──────────────┐   live rows    ┌──────▼───────┐
- │  leads.csv    │ ◀───────────── │   Table UI    │ ◀───────────── │  /api/progress│
- │  leads.json   │                │  (sort/filter) │                │  (EventStream)│
- └──────────────┘                └──────────────┘                └──────────────┘
-```
 
-**Step by step:**
+### Output columns
 
-1. **Ingest** — the browser reads the spreadsheet, finds the URL column
-   (matches `source url` → `source page` → `referring page` → any `url`), and
-   POSTs rows to `/api/ingest` in 5,000-row chunks.
-2. **Dedupe & classify** — the server normalizes each URL, extracts the host,
-   and keys it:
-   - **Websites** → keyed by **domain** (so `sbl.so/` and `sbl.so/pricing`
-     become one lead). The homepage `https://domain/` becomes the scrape target.
-   - **Socials** (LinkedIn, Instagram, GitHub, Medium, etc.) → keyed by the full
-     **profile URL** (each profile is distinct).
-   - The competitor label comes from the `Target url` column (or the source URL
-     as a fallback). Multiple competitors merge into a comma list.
-3. **Scrape** — click **Start scraping** and 30 workers pull from the pending
-   queue:
-   - **Website** → fetch homepage. If no email/phone found, try `/contact`,
-     `/contact-us`, `/about`, `/about-us`, `/team`, `/impressum`. The footer is
-     covered automatically because the whole HTML is scanned.
-   - **Scrapable social** (GitHub, Medium, YouTube) → fetch the profile page and
-     extract whatever's public.
-   - **Login-walled social** (LinkedIn, Instagram, Facebook, X/Twitter) → marked
-     `skipped_social`, never fetched.
-4. **Extract** — from each page's HTML, regexes pull emails (incl. `mailto:`),
-   phones (`tel:` + free numbers), and social profile links; JSON-LD and
-   `og:site_name` give the person name and company.
-5. **Stream & store** — each finished row is written to SQLite and pushed to the
-   browser over Server-Sent Events, updating the table and progress bar live.
+The default **sales export** (`export.csv`):
 
----
+`name, category, locality, address, phone, whatsapp, email, website, booking_link, rating, review_count, has_website, has_phone, has_email, has_social, has_booking, has_whatsapp, branch_count, score, score_reasons, maps_url, found_count`
 
-## The interface
+Add **`&raw=1`** for the full record (adds `place_id, cid, lat, lng, hours_json, services_json, socials_json, areas_json, queries_json, job_id, enrich_status, status, first_seen, last_seen`).
 
-| Element | What it does |
+Key columns:
+- **found_count** — how many cells surfaced this business (popularity signal).
+- **branch_count** — detected multi-location businesses.
+- **has_\*** — `YES` / `NO` / `UNKNOWN`. `UNKNOWN` means no evidence either way (never a false `NO`).
+- **score_reasons** — plain-text list of what earned the score.
+
+### Deduplication
+
+One business = one row. A new result is matched against existing leads in this order, first hit wins:
+
+1. `place_id` → 2. `cid` → 3. Maps URL → 4. phone → 5. website host → 6. fuzzy `name + locality` (Levenshtein ratio ≥ 0.9).
+
+On a match it **merges**: bumps `found_count`, records the extra area/query, and backfills any field that was empty. Discovery attribution is kept, so you still see everywhere the business showed up.
+
+### Enrichment flags
+
+After dedup, each lead's website (if any) is fetched once to derive:
+- `has_website`, `has_phone`, `has_email`, `has_social`, `has_booking`, `has_whatsapp`.
+
+Booking is detected from known booking hosts; WhatsApp from `wa.me` links. Enrichment is idempotent across cells and resumes.
+
+### Scoring
+
+`gmaps-scoring.json` holds the weights. Defaults:
+
+| Signal | Weight |
 |---|---|
-| **Drop zone** | Drag `.xlsx`/`.csv` or click to pick. Parsed in-browser. |
-| **Progress bar + counter** | `done / total` during a scrape run. |
-| **Filter box** | Live full-text filter across domain, name, company, emails, phones, links-to, status. |
-| **Column headers** | Click to sort; click again to reverse. |
-| **Start scraping** | Begins/resumes enrichment of all `pending` rows. |
-| **CSV / JSON** | Download the full result set. |
-| **Reset** | Wipes all scraped data (confirm prompt). |
-| **Emails / Phones cells** | Click to copy to clipboard. |
-| **Domain / Socials cells** | Clickable links (open in new tab). |
+| review volume (log-scaled) | 22 |
+| has website | 15 |
+| has booking | 12 |
+| rating | 12 |
+| has email | 10 |
+| multi-branch | 10 |
+| has WhatsApp | 8 |
+| has social | 8 |
+| has phone | 6 |
 
-The table sorts **best-first by default**: rows with an email rank above rows
-with only a phone, above no-contact rows; ties break by Semrush authority score
-(`ascore`).
+Edit the JSON and restart to retune. `UNKNOWN` flags earn nothing.
 
 ---
 
-## Output columns
+## Performance & load tuning
 
-Both the on-screen table and the CSV/JSON export use these fields. Exports lead
-with the outreach-ready columns (`score`, `primary_email`, `email_tier`, `name`,
-`company`, `intent`, `why`) so a CSV is usable as-is in a mail-merge:
+Each cell spins up a headless-Chromium gosom container. Two knobs live in [`gmaps/provider.mjs`](gmaps/provider.mjs) (`dockerExec`):
 
-| Column | Meaning |
+- **`concurrency`** (gosom `-c`) — browser workers per container. Higher = faster per cell, more CPU/RAM.
+- **`depth`** (gosom `-depth`) — how far it scrolls the results list. `2` comfortably fills a cap of 30.
+
+Defaults are tuned for a laptop (`concurrency: 3`, `depth: 2`).
+
+**What actually limits speed:**
+
+| Limit | Reality |
 |---|---|
-| `score` | 0–100 lead score (see above). Sort/export order. |
-| `primary_email` | The single best contact address to use. |
-| `email_tier` | `personal` / `role` / `personal_free` / `role_free` / `personal_offdomain` / `none`. |
-| `intent` | Derived intent, e.g. `review / comparison`, `compares 3 competitors`. |
-| `why` | One-line human reason this lead is worth contacting. |
-| `is_platform` | `true` if the source is an aggregator/platform (not a real prospect). |
-| `source_url` | Representative page for the lead (homepage for websites). |
-| `domain` | Host, `www.` stripped. |
-| `type` | `website`, `github`, `medium`, `youtube`, `linkedin`, `instagram`, `facebook`, `twitter`. |
-| `links_to` | Which competitor(s) this source links to, e.g. `Topmate, Calendly`. |
-| `anchor` | Anchor text of the backlink (first seen), trimmed to 300 chars. |
-| `ascore` | Semrush Page authority score (0–100) — higher is a stronger site. |
-| `name` | Person name, from JSON-LD `Person` where available. |
-| `company` | Company/brand, from JSON-LD `Organization` or `og:site_name`; falls back to the domain. |
-| `title` | Page `<title>`. |
-| `emails` | Comma-separated, de-duped, junk-filtered; on-domain addresses ranked first. |
-| `phones` | Comma-separated, digits normalized, 8–15 digit sanity filter. |
-| `socials` | JSON map, e.g. `{"linkedin":["…"],"instagram":["…"]}`. |
-| `status` | See below. |
+| **RAM** | the real ceiling — each active container is ~1–2 GB. On 8 GB, keep to ~2 parallel jobs. Exceeding RAM is what crashes the app. |
+| **Your IP** | Google rate-limits a single IP. Running 3+ parallel jobs mostly adds *errors*, not throughput. |
+| CPU | rarely the bottleneck; it saturates gracefully. |
+
+**Rules of thumb:**
+- 8 GB RAM → **2 parallel jobs** max.
+- Want more parallelism without throttling → you'd need rotating proxies (gosom supports `-proxies`; not wired into the UI here).
+- Roughly **~4–5 cells/min** combined at 2 parallel on a home connection.
+
+Run jobs **sequentially or 2-at-a-time**, not more.
 
 ---
 
-## Status values
+## Backlink mode
 
-| Status | Meaning |
-|---|---|
-| `pending` | Ingested, not yet scraped. |
-| `ok` | Scraped and has at least an email or phone. |
-| `no_contact` | Scraped successfully but found no email/phone (often a contact-form-only site). |
-| `skipped_social` | Login-walled social profile — not fetched. The **profile URL is saved as a social** so you can work it manually. |
-| `skipped_platform` | Source is an aggregator/platform root (github.com, medium.com, producthunt.com, …) — not a real prospect, so not scraped. |
-| `error` | Fetch/parse failed (timeout, DNS, blocked, non-HTML). |
-
----
-
-## Lead score & signals
-
-Every row gets a **0–100 `score`** (computed on read from the scraped data — no
-re-scrape needed) and the table sorts by it best-first. Score rewards, in order
-of weight:
-
-1. **Contact quality** — a *personal email on the company's own domain* beats a
-   role inbox (`info@`, `sales@`), which beats a free-provider address
-   (`gmail`), which beats phone-only, which beats nothing. The single best
-   address is surfaced as **`primary_email`** with an **`email_tier`** badge.
-2. **Intent** (from the backlink `anchor` + how many competitors it links to) —
-   an "best/vs/alternative/review" anchor, or a source linking **2+
-   competitors**, is a comparison shopper and scores higher. Shown as `intent`.
-3. **Authority** — Semrush `ascore` (capped contribution).
-4. **A named person** and **public socials** add a little.
-5. **Platform/aggregator roots are crushed** (×0.15) so directories never
-   outrank real businesses.
-
-The **`why`** column spells out the reason in one line, e.g.
-`personal email on own domain · DA 65 · review / comparison`. Tick **hide
-low-value** in the header to drop platforms, no-contact, and sub-20 rows.
-
----
-
-## Configuration
-
-Edit the constants at the top of [`server.mjs`](server.mjs):
-
-| Constant | Default | What it controls |
-|---|---|---|
-| `PORT` | `5178` | Server port. |
-| `CONCURRENCY` | `30` | Parallel scrape workers. Raise for speed, lower to be gentler. |
-| `REQ_DELAY` | `150` | ms jitter between a worker's fallback-page requests. |
-| `TIMEOUT_MS` | `12000` | Per-request timeout. |
-| `MAX_HTML` | `1_500_000` | Max bytes read per page (guards against huge pages). |
-| `CONTACT_PATHS` | `/contact`, `/about`, `/team`, … | Fallback pages tried when the homepage has no contact. |
-| `COMPETITORS` | Topmate, Calendly, Cal.com, … | Domain → label map. **Add your competitors here.** |
-| `SKIP_HOSTS` | linkedin, instagram, facebook, twitter/x | Hosts never scraped. |
-| `JUNK` | asset/CDN/placeholder patterns | Email substrings that get filtered out. |
-
-To scrape a **different competitor set**, just add domains to `COMPETITORS`. The
-tool doesn't require any competitor to be listed — unlisted targets are labeled
-`unknown` but still processed.
-
----
-
-## How scraping works (and its limits)
-
-- **Websites are the goldmine.** Emails and phones scrape reliably from company
-  homepages, contact pages, and footers.
-- **Login-walled socials yield nothing** and actively block bots, so LinkedIn,
-  Instagram, Facebook, and X are flagged `skipped_social` rather than wasting
-  requests. Work them by hand, or plug in a paid actor (e.g. Apify) later.
-- **GitHub / Medium / YouTube** are fetched for whatever is public (a profile
-  bio, linked socials), but rarely expose a direct email.
-- **Realistic yield:** expect **~20–40%** of website sources to give a usable
-  email. Many sites only offer a contact form (those land as `no_contact`).
-- **Blocking:** at balanced concurrency most sites respond fine; some will
-  timeout or block and land as `error`. That's normal at this scale.
-
-The scraper reads raw HTML — it does **not** run JavaScript. Contacts injected
-by client-side JS won't be seen. (A headless-browser mode could be added later
-if that becomes a bottleneck.)
-
----
-
-## Data storage & resume
-
-- All state lives in **`leads.db`** (SQLite, WAL mode) beside `server.mjs`, with
-  `leads.db-wal` / `leads.db-shm` sidecar files.
-- One table, `sources`, keyed by domain (websites) or profile URL (socials).
-- **Resume:** only `pending` rows are scraped, so stopping and restarting never
-  re-scrapes finished domains. Ingesting the same file twice is safe (existing
-  keys merge their `links_to` instead of duplicating).
-- **Reset:** the **Reset** button (or `POST /api/reset`) clears the table. To
-  wipe completely, stop the server and delete `leads.db*`.
+Drop a Semrush **Backlink Audit** CSV export in the browser. The tool visits each referring domain and scrapes email / phone / socials / name / company, then shows a sortable best-first table with the same CSV/JSON export. No Docker needed for this mode — it's plain HTTP fetches. See the in-app UI; behaviour is unchanged from v1.
 
 ---
 
 ## Architecture
 
 ```
-competitor-leads/
-├── server.mjs          # HTTP server + scraper + SQLite. The whole backend.
-├── public/
-│   └── index.html      # Single-page UI (drop zone, table, SSE client).
-├── package.json        # Zero deps; "npm start" → node server.mjs
-├── test-signals.mjs    # Self-check for the lead-scoring logic (node test-signals.mjs).
-├── leads.db*           # SQLite data (created on first run).
-└── README.md
+server.mjs            HTTP + SSE server (port 5178), routes, job control
+public/index.html     single-page UI for both modes
+gmaps-scoring.json    scoring weights (edit + restart to retune)
+
+gmaps/
+  db.mjs        SQLite schema (jobs / searches / gmaps_leads) + prepared statements
+  provider.mjs  gosom-in-Docker provider: build query line, spawn container, map output
+  dedup.mjs     six-stage dedup + merge
+  enrich.mjs    website fetch -> YES/NO/UNKNOWN flags
+  scoring.mjs   weighted score + reasons
+  runner.mjs    orchestrates a job cell-by-cell; resumable; injectable deps
+  export.mjs    CSV/JSON, sales vs raw columns
+  fixtures/     sample gosom output for tests
+
+test/           node --test unit tests for every gmaps module
 ```
 
-- **Backend** — one file, Node's built-in `http` + `node:sqlite` + global
-  `fetch`. No Express, no ORM, no build step.
-- **Frontend** — one HTML file, vanilla JS, SheetJS from CDN for spreadsheet
-  parsing. Communicates via `fetch` + one `EventSource`.
-- **Why the browser parses the spreadsheet:** it keeps a 30k-row XLSX off the
-  wire and out of the server, so the server needs no xlsx or multipart libraries.
+- **Storage**: a single `leads.db` SQLite file (via `node:sqlite`).
+- **Provider is swappable**: `runner` depends on an injected `runCell`, so tests never touch Docker.
+- **Docker is spawned via Node `spawn`** (no shell) — avoids Git-Bash path mangling on Windows.
 
 ---
 
 ## API reference
 
-The UI uses these; you can also script against them.
-
-| Method & path | Body / query | Returns |
+| Method | Path | Purpose |
 |---|---|---|
-| `GET /` | — | The web app. |
-| `POST /api/ingest` | `{ rows: [{source_url, target_url, anchor, ascore}] }` | `{ added, total, pending }` |
-| `POST /api/start` | — | `{ running: true }` — begins/resumes scraping. |
-| `GET /api/rows` | — | `{ rows: [...], running }` — full current table. |
-| `GET /api/progress` | — | **SSE stream**: `{type:'start'|'row'|'done', done, total, row}`. |
-| `GET /api/export.csv` | — | CSV download. |
-| `GET /api/export.json` | — | JSON download. |
-| `POST /api/reset` | — | Wipes all rows. |
+| POST | `/api/gmaps/jobs` | create job `{city, areas[], queries[], cap}` → `{job_id, total_cells}` |
+| POST | `/api/gmaps/jobs/:id/start` | start / resume |
+| POST | `/api/gmaps/jobs/:id/stop` | graceful stop (finishes current cell) |
+| GET | `/api/gmaps/jobs` | list jobs |
+| GET | `/api/gmaps/jobs/:id` | job status + coverage report |
+| GET | `/api/gmaps/leads?job_id=N` | leads for a job |
+| GET | `/api/gmaps/export.csv?job_id=N[&raw=1]` | CSV export |
+| GET | `/api/gmaps/export.json?job_id=N[&raw=1]` | JSON export |
+
+Progress streams over SSE (`gmaps_progress`, `gmaps_done`, `gmaps_error`).
+
+---
+
+## Data storage & resume
+
+- Everything persists in **`leads.db`** (gitignored — it holds real people's contact data).
+- Each cell's status is recorded, so a job is fully **resumable**: `POST /jobs/:id/start` again after any interruption and it skips finished cells.
+- Ingest, enrich and score are **idempotent** — re-running a cell can't double-count a business.
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
-|---|---|
-| `node:sqlite` error on start | Node too old. Need ≥ 22.5; run `node -v`. |
-| Drop zone does nothing | SheetJS blocked (no internet / CSP). Check the browser console. |
-| Every row is `error` | Network/firewall blocking outbound requests, or offline. |
-| Everything `no_contact` | Sites use contact forms or JS-rendered contacts (not scrapable here). |
-| Scrape feels slow | Raise `CONCURRENCY` in `server.mjs` (watch for more `error`s/blocks). |
-| Port already in use | Change `PORT` in `server.mjs`. |
-| Want a fresh start | **Reset** button, or stop server and delete `leads.db*`. |
+**Stuck / leaked containers.** gosom occasionally keeps a container alive after finishing. The provider auto-kills it (stable-file-size poll + timeout), but if load spikes, list and clean up manually:
+
+```bash
+docker ps --filter name=gmaps- --format '{{.Names}} {{.CreatedAt}}'
+# kill anything older than ~10 min:
+docker ps -q --filter name=gmaps- | xargs -r docker kill
+```
+
+On Windows Git Bash, prefix docker commands that mount paths with `MSYS_NO_PATHCONV=1`.
+
+**App crashes under heavy load** (`STATUS_STACK_BUFFER_OVERRUN` / `0xC0000409` on Windows). You exceeded RAM with too many parallel containers. `node:sqlite` is a single connection and doesn't like heavy concurrent load. Fix: run ≤ 2 parallel jobs, then restart the server and `POST /jobs/:id/start` to resume — no data is lost.
+
+**"docker: command not found" / daemon not running.** Start Docker Desktop (or `sudo systemctl start docker`). Verify with `docker ps`.
+
+**A job seems stalled.** Check `docker ps` — if a container has run for minutes, kill it; the runner will record the cell as an error and move on.
+
+---
+
+## Tests
+
+```bash
+npm test        # node --test (all gmaps modules) + signal tests
+```
+
+Tests use in-memory SQLite (`:memory:`) and fixture gosom output — **no Docker required to run the test suite**.
 
 ---
 
 ## Legal & etiquette
 
-Cold outreach to scraped contacts is generally fine for **B2B in India**, but
-**EU/US** contacts fall under **GDPR / CAN-SPAM**. Bulk cold mail can also burn
-your sending domain's reputation. Warm up your domain, keep volumes sane, honor
-opt-outs, and only contact businesses where there's a genuine fit.
+- Uses the OSS `gosom/google-maps-scraper`, which drives a real headless browser over **public** Google Maps pages. It does **not** bypass CAPTCHAs, logins, or paywalls, and this app won't scrape `maps.google.com` directly.
+- Scrapes **business** listing data (name, address, phone, website, rating) — not private personal data.
+- You are responsible for how you use the output. Respect Google's Terms, local data-protection law (GDPR/DPDP/etc.), and anti-spam rules (CAN-SPAM, etc.) before contacting anyone.
+- Rate-limit yourself. Hammering from one IP gets you throttled and is rude. Keep parallelism low.
+
+This is a tool for legitimate B2B prospecting. Don't use it to harvest personal data or spam.

@@ -3,6 +3,10 @@
 *.ndjson
 *.json
 *.db
+*.db-shm
+*.db-wal
+*.log
+*.err
 *.html
 lists/
 node_modules/
@@ -10,3 +14,11 @@ node_modules/
 # keep the project manifest (overrides *.json above)
 !package.json
 !package-lock.json
+
+# keep source config + test fixtures (override *.json above); these are code, not data
+!gmaps-scoring.json
+!gmaps/fixtures/
+!gmaps/fixtures/*.json
+
+# keep the UI source (override *.html above); it's code, not scraped data
+!public/index.html

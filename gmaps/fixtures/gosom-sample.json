@@ -1,0 +1,42 @@
+[
+  {
+    "input_id": "s1",
+    "link": "https://www.google.com/maps/place/?q=place_id:ChIJdentist1",
+    "cid": "111111",
+    "title": "Sharma Dental Clinic",
+    "categories": ["Dentist", "Dental clinic"],
+    "category": "Dentist",
+    "address": "Plot 5, Dharampeth, Nagpur, Maharashtra 440010",
+    "open_hours": { "Monday": ["10AM-8PM"], "Sunday": ["Closed"] },
+    "web_site": "https://sharmadental.in/",
+    "phone": "+91 98765 43210",
+    "review_count": 214,
+    "review_rating": 4.7,
+    "latitude": 21.1358,
+    "longitude": 79.0682,
+    "place_id": "ChIJdentist1",
+    "description": "Family dental practice in Dharampeth.",
+    "reservations": [{ "link": "https://calendly.com/sharmadental", "source": "calendly.com" }],
+    "owner": { "id": "o1", "name": "Dr. Anil Sharma", "link": "" },
+    "complete_address": { "borough": "Dharampeth", "city": "Nagpur", "state": "Maharashtra", "country": "IN" },
+    "about": [{ "id": "a1", "name": "Service options", "options": [{ "name": "Online appointments", "enabled": true }] }],
+    "emails": []
+  },
+  {
+    "input_id": "s1",
+    "link": "https://www.google.com/maps/place/?q=place_id:ChIJdentist2",
+    "cid": "222222",
+    "title": "City Dental Care",
+    "category": "Dental clinic",
+    "address": "Near Sadar, Nagpur, Maharashtra 440001",
+    "open_hours": {},
+    "web_site": "",
+    "phone": "0712-2345678",
+    "review_count": 12,
+    "review_rating": 3.9,
+    "latitude": 21.1620,
+    "longtitude": 79.0900,
+    "place_id": "ChIJdentist2",
+    "complete_address": { "city": "Nagpur", "country": "IN" }
+  }
+]

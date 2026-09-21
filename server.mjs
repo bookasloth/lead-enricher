@@ -14,6 +14,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { parseCSV, renderAdminHTML } from './admin-template.mjs';
+import { initGmaps } from './gmaps/db.mjs';
+import { provider } from './gmaps/provider.mjs';
+import { runJob, createJob, coverageReport } from './gmaps/runner.mjs';
+import { loadScoringConfig } from './gmaps/scoring.mjs';
+import * as gexport from './gmaps/export.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -116,6 +121,12 @@ const saveRes   = db.prepare(`UPDATE sources SET
 const pending   = db.prepare(`SELECT key, source_url, type, domain FROM sources WHERE status='pending'`);
 const allRows   = db.prepare(`SELECT * FROM sources
   ORDER BY (emails != '') DESC, (phones != '') DESC, ascore DESC`);
+
+// ---------- google maps source (own tables in the same db; sources untouched) ----------
+const G = initGmaps(db);
+const gmapsRunning = new Set();
+const gmapsStop = new Set();
+const gScoreCfg = loadScoringConfig();
 
 // ---------- classify + extract ----------
 function competitorOf(url) {
@@ -386,6 +397,63 @@ async function runEnrichment() {
   broadcast({ type: 'done', done, total });
 }
 
+// ---------- google maps job control + routes ----------
+function startGmapsJob(jobId) {
+  if (gmapsRunning.has(jobId)) return;
+  gmapsRunning.add(jobId); gmapsStop.delete(jobId);
+  runJob(G, jobId, {
+    runCell: provider.runCell,
+    enrichDeps: { fetchText, extract },
+    cfg: gScoreCfg,
+    broadcast,
+    shouldStop: () => gmapsStop.has(jobId),
+  }).catch(e => {
+    G.setJobStatus.run({ id: jobId, status: 'error', completed_at: Date.now() });
+    broadcast({ type: 'gmaps_error', job_id: jobId, error: String(e).slice(0, 200) });
+  }).finally(() => gmapsRunning.delete(jobId));
+}
+
+async function handleGmaps(req, res, url) {
+  const p = url.pathname;
+  const m = p.match(/^\/api\/gmaps\/jobs\/(\d+)(\/start|\/stop)?$/);
+  if (req.method === 'POST' && p === '/api/gmaps/jobs') {
+    const { city, areas, queries, cap } = JSON.parse((await readBody(req)) || '{}');
+    const A = (areas || []).map(s => String(s).trim()).filter(Boolean);
+    const Q = (queries || []).map(s => String(s).trim()).filter(Boolean);
+    if (!A.length || !Q.length) return send(res, 400, 'application/json', JSON.stringify({ error: 'need at least one area and one query' }));
+    const jobId = createJob(G, { city: String(city || '').trim(), areas: A, queries: Q, cap: Number(cap) || 60 });
+    startGmapsJob(jobId);
+    return send(res, 200, 'application/json', JSON.stringify({ job_id: jobId, total_cells: A.length * Q.length }));
+  }
+  if (req.method === 'GET' && p === '/api/gmaps/jobs') {
+    return send(res, 200, 'application/json', JSON.stringify({ jobs: G.listJobs.all(), running: [...gmapsRunning] }));
+  }
+  if (m && req.method === 'POST' && m[2] === '/start') { startGmapsJob(Number(m[1])); return send(res, 200, 'application/json', JSON.stringify({ running: true })); }
+  if (m && req.method === 'POST' && m[2] === '/stop')  { gmapsStop.add(Number(m[1])); return send(res, 200, 'application/json', JSON.stringify({ stopping: true })); }
+  if (m && req.method === 'GET' && !m[2]) {
+    const id = Number(m[1]); const job = G.getJob.get(id);
+    if (!job) return send(res, 404, 'application/json', JSON.stringify({ error: 'no such job' }));
+    return send(res, 200, 'application/json', JSON.stringify({ job, coverage: coverageReport(G, id), searches: G.allSearches.all(id), running: gmapsRunning.has(id) }));
+  }
+  if (req.method === 'GET' && p === '/api/gmaps/leads') {
+    const jid = Number(url.searchParams.get('job_id')) || 0;
+    const rows = jid ? G.leadsByJob.all(jid) : G.allLeads.all();
+    return send(res, 200, 'application/json', JSON.stringify({ rows }));
+  }
+  if (req.method === 'GET' && (p === '/api/gmaps/export.csv' || p === '/api/gmaps/export.json')) {
+    const jid = Number(url.searchParams.get('job_id')) || 0;
+    const raw = url.searchParams.get('raw') === '1';
+    const rows = jid ? G.leadsByJob.all(jid) : G.allLeads.all();
+    if (p.endsWith('.csv')) {
+      res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="gmaps-leads.csv"' });
+      return res.end(gexport.toCSV(rows, raw));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="gmaps-leads.json"' });
+    return res.end(gexport.toJSON(rows, raw));
+  }
+  return send(res, 404, 'application/json', JSON.stringify({ error: 'unknown gmaps route' }));
+}
+
 // ---------- csv/json export ----------
 // outreach-ready order: score + primary contact + why up front, then supporting fields
 const COLS = ['score','primary_email','email_tier','name','company','domain','intent','why','links_to',
@@ -466,6 +534,8 @@ const server = http.createServer(async (req, res) => {
       db.exec('DELETE FROM sources');
       return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
     }
+
+    if (url.pathname.startsWith('/api/gmaps/')) return handleGmaps(req, res, url);
 
     // ---- saved lists admin: /admin/lists , /admin/lists/<name>/<period>[.csv] ----
     if (req.method === 'GET' && url.pathname.startsWith('/admin/lists')) {

@@ -5,6 +5,7 @@
   "description": "Local web app: drop a Semrush backlink export, scrape email/phone/socials/name/company per source, view sortable best-first table, export CSV/JSON",
   "engines": { "node": ">=22.5" },
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "node --test && node test-signals.mjs"
   }
 }

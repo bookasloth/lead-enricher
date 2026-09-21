@@ -1,0 +1,17 @@
+{
+  "weights": {
+    "reviewVolume": 22,
+    "rating": 12,
+    "hasWebsite": 15,
+    "multiBranch": 10,
+    "hasBooking": 12,
+    "hasWhatsapp": 8,
+    "hasSocial": 8,
+    "hasEmail": 10,
+    "hasPhone": 6
+  },
+  "reviewVolumeCap": 1000,
+  "ratingMinReviews": 10,
+  "highReviews": 100,
+  "moderateReviews": 25
+}
