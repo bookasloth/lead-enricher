@@ -21,6 +21,7 @@ import { loadScoringConfig } from './gmaps/scoring.mjs';
 import * as gexport from './gmaps/export.mjs';
 import { layaDecide } from './gmaps/laya-client.mjs';
 import { gradeLead } from './gmaps/grade.mjs';
+import { enrichWebsite } from './gmaps/enrich.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -552,6 +553,52 @@ async function handleGmaps(req, res, url) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${fname}.json"` });
     return res.end(gexport.toJSON(rows, raw));
   }
+  // ---------- contact enrichment: re-enrich leads missing email ----------
+  if (req.method === 'POST' && p === '/api/gmaps/enrich') {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const grade = body.grade || '';   // e.g. 'A+' or '' for all
+    const priority = body.priority || '';
+    const limit = Math.min(500, Number(body.limit) || 100);
+    const where = ["enrich_status IN ('pending','no_contact','error')"];
+    const args = {};
+    if (grade) { where.push('grade=@grade'); args.grade = grade; }
+    if (priority) { where.push('priority=@priority'); args.priority = priority; }
+    const leads = db.prepare(`SELECT * FROM gmaps_leads WHERE ${where.join(' AND ')} ORDER BY fit_score DESC LIMIT @limit`).all({ ...args, limit });
+    let enriched = 0, found = 0;
+    for (const row of leads) {
+      if (!row.website) continue;
+      const patch = await enrichWebsite(row, { fetchText, extract });
+      G.updateEnrich.run({ key: row.key, ...patch });
+      enriched++;
+      if (patch.email || patch.whatsapp) found++;
+    }
+    return send(res, 200, 'application/json', JSON.stringify({ enriched, found, total_candidates: leads.length }));
+  }
+
+  // ---------- auto-schedule CRUD ----------
+  if (req.method === 'POST' && p === '/api/gmaps/schedules') {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const { name, city, areas, queries, cap, interval_h } = body;
+    if (!areas?.length || !queries?.length || !interval_h) return send(res, 400, 'application/json', JSON.stringify({ error: 'need areas, queries, interval_h' }));
+    const now = Date.now();
+    const info = G.createSchedule.run({ name: name || 'Schedule', city: city || 'Nagpur', params_json: JSON.stringify({ areas, queries, cap: cap || 30 }), interval_h: Number(interval_h), next_run_at: now + Number(interval_h) * 3600_000, created_at: now });
+    return send(res, 200, 'application/json', JSON.stringify({ id: Number(info.lastInsertRowid) }));
+  }
+  if (req.method === 'GET' && p === '/api/gmaps/schedules') {
+    return send(res, 200, 'application/json', JSON.stringify({ schedules: G.listSchedules.all() }));
+  }
+  const sm = p.match(/^\/api\/gmaps\/schedules\/(\d+)(\/toggle)?$/);
+  if (sm && req.method === 'POST' && sm[2] === '/toggle') {
+    const sched = G.getSchedule.get(Number(sm[1]));
+    if (!sched) return send(res, 404, 'application/json', JSON.stringify({ error: 'no such schedule' }));
+    G.toggleSchedule.run({ id: sched.id, enabled: sched.enabled ? 0 : 1 });
+    return send(res, 200, 'application/json', JSON.stringify({ enabled: !sched.enabled }));
+  }
+  if (sm && req.method === 'DELETE' && !sm[2]) {
+    G.deleteSchedule.run(Number(sm[1]));
+    return send(res, 200, 'application/json', JSON.stringify({ deleted: true }));
+  }
+
   return send(res, 404, 'application/json', JSON.stringify({ error: 'unknown gmaps route' }));
 }
 
@@ -669,4 +716,17 @@ export { deriveSignals, classifyEmail, pickPrimary, isPlatform, intentOf, fetchT
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   server.listen(PORT, () => console.log(`Lead Enricher → http://localhost:${PORT}`));
+
+  // schedule ticker — check every 60s for due schedules
+  setInterval(() => {
+    const now = Date.now();
+    for (const sched of G.dueSchedules.all(now)) {
+      const { areas, queries, cap } = JSON.parse(sched.params_json || '{}');
+      if (!areas?.length || !queries?.length) continue;
+      const jobId = createJob(G, { city: sched.city, areas, queries, cap: cap || 30 });
+      const r = startGmapsJob(jobId);
+      console.log(`[schedule] ${sched.name}: created job ${jobId}${r.ok ? ' (started)' : ' (queued — cap reached)'}`);
+      G.updateScheduleRun.run({ id: sched.id, now, next: now + sched.interval_h * 3600_000 });
+    }
+  }, 60_000);
 }

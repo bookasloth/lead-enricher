@@ -294,6 +294,31 @@ Orthodontist</textarea></div>
         <div class="gm-actions" style="margin-top:12px"><button class="ghost" id="gmStop">Stop</button></div>
       </div>
     </div>
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-h">Contact enrichment</div>
+      <div class="panel-b">
+        <p class="dim" style="margin:0 0 10px">Re-scrape websites of high-priority leads missing email/phone.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <select id="enrGrade"><option value="">Any grade</option><option>A+</option><option>A</option><option>B</option></select>
+          <select id="enrPrio"><option value="">Any priority</option><option>P1</option><option>P2</option><option>P3</option></select>
+          <input id="enrLimit" type="number" value="100" min="1" max="500" style="width:70px" title="Max leads to process">
+          <button id="enrBtn">Enrich contacts</button>
+          <span class="dim" id="enrResult"></span>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-h">Auto-schedule scrapes</div>
+      <div class="panel-b">
+        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:14px">
+          <div><label>Name</label><input id="schName" value="Daily refresh" style="width:140px"></div>
+          <div><label>Interval (hours)</label><input id="schHours" type="number" value="24" min="1" max="720" style="width:70px"></div>
+          <button id="schAdd">Create schedule</button>
+        </div>
+        <p class="dim" style="margin:0 0 8px">Uses the city/areas/queries from the form above. Schedule auto-fires jobs at interval, respecting the 2-job cap.</p>
+        <table id="schTbl" style="width:100%"><thead><tr><th>Name</th><th>Every</th><th>Last run</th><th>Next</th><th>Status</th><th></th></tr></thead><tbody id="schRows"></tbody></table>
+      </div>
+    </div>
   </section>
 
   <!-- ============ BACKLINKS ============ -->
@@ -383,6 +408,7 @@ function route(){
   $('#viewTitle').textContent=TITLES[v];
   if(v==='dashboard') loadDash();
   if(v==='leads') loadLeads();
+  if(v==='scrape') loadSchedules();
   if(v==='backlinks') loadBacklinks();
 }
 window.addEventListener('hashchange',route);
@@ -564,6 +590,37 @@ function paintJob(job,running){
   $('#gmBar').style.width=(job.done_cells/(job.total_cells||1)*100)+'%';
   const st=running?'running':job.status; $('#gmStatus').textContent=st; $('#gmStatus').className='st st-'+st; $('#gmStop').disabled=!running;
 }
+
+// ---------- contact enrichment ----------
+$('#enrBtn').onclick=async()=>{
+  $('#enrBtn').disabled=true; $('#enrBtn').textContent='Enriching…'; $('#enrResult').textContent='';
+  const body={grade:$('#enrGrade').value,priority:$('#enrPrio').value,limit:Number($('#enrLimit').value)||100};
+  const r=await api('/api/gmaps/enrich',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  $('#enrBtn').disabled=false; $('#enrBtn').textContent='Enrich contacts';
+  $('#enrResult').textContent=`Done: ${r.enriched} scraped, ${r.found} new contacts found (${r.total_candidates} candidates)`;
+};
+
+// ---------- auto-schedule ----------
+async function loadSchedules(){
+  const d=await api('/api/gmaps/schedules'); const rows=d.schedules||[];
+  $('#schRows').innerHTML=rows.length?rows.map(s=>{
+    const ago=s.last_run_at?new Date(s.last_run_at).toLocaleString():'never';
+    const next=s.next_run_at?new Date(s.next_run_at).toLocaleString():'—';
+    return `<tr><td>${esc(s.name)}</td><td>${s.interval_h}h</td><td class="dim">${ago}</td><td class="dim">${next}</td>
+      <td><span class="st st-${s.enabled?'running':'stopped'}">${s.enabled?'active':'paused'}</span></td>
+      <td><button class="ghost" onclick="toggleSch(${s.id})">Toggle</button> <button class="ghost" onclick="delSch(${s.id})">Del</button></td></tr>`;
+  }).join(''):'<tr><td colspan="6" class="dim">No schedules yet</td></tr>';
+}
+window.toggleSch=async(id)=>{ await fetch(`/api/gmaps/schedules/${id}/toggle`,{method:'POST'}); loadSchedules(); };
+window.delSch=async(id)=>{ if(!confirm('Delete this schedule?'))return; await fetch(`/api/gmaps/schedules/${id}`,{method:'DELETE'}); loadSchedules(); };
+$('#schAdd').onclick=async()=>{
+  const areas=$('#gmAreas').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const queries=$('#gmQueries').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!areas.length||!queries.length){ toast('Fill areas + queries above first'); return; }
+  const body={name:$('#schName').value||'Schedule',city:$('#gmCity').value||'Nagpur',areas,queries,cap:Number($('#gmCap').value)||30,interval_h:Number($('#schHours').value)||24};
+  await fetch('/api/gmaps/schedules',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  toast('Schedule created'); loadSchedules();
+};
 
 // ---------- SSE (shared) ----------
 const es=new EventSource('/api/progress');

@@ -91,6 +91,19 @@ export function initGmaps(db) {
     try { db.exec(`ALTER TABLE gmaps_leads ADD COLUMN ${col} ${type}`); } catch { /* column exists */ }
   }
 
+  // auto-schedule table
+  db.exec(`CREATE TABLE IF NOT EXISTS schedules (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT,
+    city        TEXT,
+    params_json TEXT,           -- {areas:[], queries:[], cap}
+    interval_h  INTEGER,        -- hours between runs
+    enabled     INTEGER DEFAULT 1,
+    last_run_at INTEGER,
+    next_run_at INTEGER,
+    created_at  INTEGER
+  )`);
+
   return {
     // jobs
     createJob: db.prepare(`INSERT INTO jobs (source,city,params_json,status,total_cells,started_at)
@@ -138,5 +151,15 @@ export function initGmaps(db) {
     leadsByLocality: db.prepare(`SELECT key,name,address FROM gmaps_leads WHERE locality=?`),
     leadsByJob: db.prepare(`SELECT * FROM gmaps_leads WHERE job_id=? ORDER BY score DESC`),
     allLeads: db.prepare(`SELECT * FROM gmaps_leads ORDER BY score DESC`),
+
+    // schedules
+    createSchedule: db.prepare(`INSERT INTO schedules (name,city,params_json,interval_h,enabled,next_run_at,created_at)
+      VALUES (@name,@city,@params_json,@interval_h,1,@next_run_at,@created_at)`),
+    listSchedules: db.prepare(`SELECT * FROM schedules ORDER BY id DESC`),
+    getSchedule: db.prepare(`SELECT * FROM schedules WHERE id=?`),
+    updateScheduleRun: db.prepare(`UPDATE schedules SET last_run_at=@now, next_run_at=@next WHERE id=@id`),
+    toggleSchedule: db.prepare(`UPDATE schedules SET enabled=@enabled WHERE id=@id`),
+    deleteSchedule: db.prepare(`DELETE FROM schedules WHERE id=?`),
+    dueSchedules: db.prepare(`SELECT * FROM schedules WHERE enabled=1 AND next_run_at <= ?`),
   };
 }
