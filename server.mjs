@@ -446,6 +446,21 @@ async function handleGmaps(req, res, url) {
     }
   }
 
+  // outreach workflow (CRM-lite): set a lead's pipeline status + notes
+  const ms = p.match(/^\/api\/gmaps\/leads\/(.+)\/status$/);
+  if (ms && req.method === 'POST') {
+    const key = decodeURIComponent(ms[1]);
+    const lead = G.getLead.get(key);
+    if (!lead) return send(res, 404, 'application/json', JSON.stringify({ error: 'no such lead' }));
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const outreach_status = String(body.status || lead.outreach_status || 'new');
+    const notes = body.notes != null ? String(body.notes) : (lead.notes || '');
+    // stamp first contact time when moving off 'new'
+    const contacted_at = (outreach_status !== 'new' && !lead.contacted_at) ? Date.now() : (lead.contacted_at || null);
+    G.updateOutreach.run({ key, outreach_status, notes, contacted_at });
+    return send(res, 200, 'application/json', JSON.stringify({ ok: true, key, outreach_status }));
+  }
+
   // step-3 backfill: (re)grade stored leads. Pure CPU, no scrape/model needed;
   // safe to run anytime. Optional ?job_id= limits to one job, else all leads.
   if (req.method === 'POST' && p === '/api/gmaps/grade-all') {
@@ -493,7 +508,7 @@ async function handleGmaps(req, res, url) {
     });
     return send(res, 200, 'application/json', JSON.stringify({
       total, grade: grp('grade'), priority: grp('priority'), eligible: grp('marketing_eligible'),
-      top_categories: cats, jobs, running: [...gmapsRunning],
+      outreach: grp('outreach_status'), top_categories: cats, jobs, running: [...gmapsRunning],
     }));
   }
 
@@ -505,6 +520,7 @@ async function handleGmaps(req, res, url) {
     if (jid) { where.push('job_id=@jid'); args.jid = jid; }
     const grade = url.searchParams.get('grade'); if (grade) { where.push('grade=@grade'); args.grade = grade; }
     const priority = url.searchParams.get('priority'); if (priority) { where.push('priority=@priority'); args.priority = priority; }
+    const outreach = url.searchParams.get('outreach'); if (outreach) { where.push('outreach_status=@outreach'); args.outreach = outreach; }
     const qs = (url.searchParams.get('q') || '').trim();
     if (qs) { where.push('(name LIKE @q OR category LIKE @q OR locality LIKE @q OR phone LIKE @q OR email LIKE @q)'); args.q = '%' + qs + '%'; }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';

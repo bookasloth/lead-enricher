@@ -224,6 +224,7 @@
       <input type="search" id="q" placeholder="search name / category / phone…">
       <select id="fGrade"><option value="">All grades</option><option>A+</option><option>A</option><option>B</option><option>C</option><option>D</option><option>X</option></select>
       <select id="fPrio"><option value="">All priorities</option><option>P1</option><option>P2</option><option>P3</option><option>EXCLUDE</option></select>
+      <select id="fOut"><option value="">Any status</option><option>new</option><option>contacted</option><option>replied</option><option>won</option><option>lost</option></select>
       <select id="fJob"><option value="">All jobs</option></select>
       <span class="count" id="leadCount"></span>
     </div>
@@ -332,6 +333,27 @@ const prioBadge = p => p?`<span class="prio pr-${p}">${p}</span>`:'';
 const link = (u,l) => u?`<a href="${esc(u)}" target="_blank" rel="noopener">${l||'link'}</a>`:'';
 const copyable = t => t?`<span class="copy mono" title="copy" onclick="navigator.clipboard.writeText('${esc(t).replace(/'/g,"\\'")}');toast('copied')">${esc(t)}</span>`:'';
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),1400); }
+// outreach (CRM-lite)
+const OUTREACH=['new','contacted','replied','won','lost'];
+const OSTAT_COL={new:'--dim2',contacted:'--accent',replied:'--warn',won:'--ok',lost:'--err'};
+const statusDot=s=>`<span title="outreach: ${s||'new'}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${cssv(OSTAT_COL[s||'new']||'--dim2')};margin-right:7px;vertical-align:middle"></span>`;
+function pitchFor(r){
+  let d={}; try{ d=JSON.parse(r.grade_json||'{}'); }catch{}
+  const cat=(r.category||'business').toLowerCase();
+  const noBooking = d.booking==='NOT_DETECTED' || r.opportunity==='High';
+  return `Hi ${r.name||'there'} team,\n\n`+
+    `I came across your ${cat} in ${r.locality||'Nagpur'} on Google. `+
+    (noBooking?`I noticed you don't seem to offer online appointment booking yet. `:``)+
+    `We built Book A Sloth to help ${cat}s in Nagpur cut no-shows and let clients book + get reminders automatically — no more phone tag.\n\n`+
+    `Could I show you a quick 2-minute demo this week?\n\n— Book A Sloth`;
+}
+function copyPitch(key){ const r=LEADCACHE[key]; if(!r)return; navigator.clipboard.writeText(pitchFor(r)); toast('pitch copied'); }
+async function saveOutreach(key){
+  const status=$('#dwStatus').value, notes=$('#dwNotes').value;
+  const j=await api(`/api/gmaps/leads/${encodeURIComponent(key)}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status,notes})});
+  if(j&&j.ok){ const r=LEADCACHE[key]; if(r){ r.outreach_status=status; r.notes=notes; } toast('saved · '+status); closeDrawer(); }
+  else toast('save failed');
+}
 const GRADE_ORDER=['A+','A','B','C','D','X'], GRADE_COL={'A+':'--gA1','A':'--gA','B':'--gB','C':'--gC','D':'--gD','X':'--gX'};
 const PRIO_ORDER=['P1','P2','P3','EXCLUDE'], PRIO_COL={P1:'--p1',P2:'--p2',P3:'--p3',EXCLUDE:'--pex'};
 const cssv = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -424,6 +446,7 @@ function leadQuery(){
   if($('#q').value.trim()) p.set('q',$('#q').value.trim());
   if($('#fGrade').value) p.set('grade',$('#fGrade').value);
   if($('#fPrio').value) p.set('priority',$('#fPrio').value);
+  if($('#fOut').value) p.set('outreach',$('#fOut').value);
   if($('#fJob').value) p.set('job_id',$('#fJob').value);
   return p;
 }
@@ -431,7 +454,7 @@ function leadRowHtml(r){
   let why=''; try{ why=(JSON.parse(r.grade_json||'{}').reasons||[]).slice(0,2).join(' · '); }catch{}
   return `<tr class="in" onclick="openLead('${esc(r.key).replace(/'/g,"\\'")}')">
     <td>${gradeBadge(r.grade)}</td><td>${prioBadge(r.priority)}</td><td>${scoreCell(r.fit_score)}</td>
-    <td><span class="name">${link(r.maps_url,esc(r.name))||esc(r.name)}</span></td>
+    <td><span class="name">${statusDot(r.outreach_status)}${link(r.maps_url,esc(r.name))||esc(r.name)}</span></td>
     <td>${esc(r.category)}</td><td>${esc(r.locality)}</td>
     <td>${copyable(r.phone)}</td><td>${copyable(r.email)}</td><td>${link(r.website,'site')}</td>
     <td>${r.rating||''}</td><td>${r.review_count||0}</td><td class="why">${esc(why)}</td></tr>`;
@@ -458,7 +481,7 @@ async function loadLeads(reset=true){
 new IntersectionObserver((entries)=>{
   if(entries[0].isIntersecting && !$('#v-leads').classList.contains('hidden') && !leadClientSort) loadLeads(false);
 },{ root:$('main'), rootMargin:'0px 0px 500px 0px' }).observe($('#leadSentinel'));
-['#q','#fGrade','#fPrio','#fJob'].forEach(s=>$(s).addEventListener('input',leadFilters));
+['#q','#fGrade','#fPrio','#fOut','#fJob'].forEach(s=>$(s).addEventListener('input',leadFilters));
 // clicking a column sorts the ALREADY-loaded set (disables lazy append to keep order stable)
 $$('#leadTbl th[data-k]').forEach(th=>th.onclick=()=>{
   const k=th.dataset.k; if(leadSort===k)leadDir*=-1; else{leadSort=k;leadDir=(k==='name'||k==='category'||k==='locality')?1:-1;}
@@ -496,6 +519,15 @@ function openLead(key){
         ${kv('WhatsApp',link(r.whatsapp,'wa'))}${kv('Rating',r.rating?`${r.rating}★ (${r.review_count||0} reviews)`:'')}
         ${kv('Signal score',r.score)}${kv('Opportunity',r.opportunity)}
         ${kv('Data quality',d.data_quality!=null?d.data_quality+'/100':'')}${kv('Maps',link(r.maps_url,'open in Maps'))}
+      </div>
+      <div style="border-top:1px solid var(--line);padding-top:14px">
+        <div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Outreach</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <select id="dwStatus" style="flex:1">${OUTREACH.map(s=>`<option value="${s}" ${r.outreach_status===s?'selected':''}>${s}</option>`).join('')}</select>
+          <button class="ghost" onclick="copyPitch('${esc(r.key).replace(/'/g,"\\'")}')">Copy pitch</button>
+        </div>
+        <textarea id="dwNotes" placeholder="notes…" style="width:100%;min-height:64px;font:inherit">${esc(r.notes||'')}</textarea>
+        <button onclick="saveOutreach('${esc(r.key).replace(/'/g,"\\'")}')" style="margin-top:8px;width:100%">Save outreach</button>
       </div>
     </div>`;
   $('#drawer').classList.add('on'); $('#drawerBg').classList.add('on');

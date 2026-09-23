@@ -85,6 +85,8 @@ export function initGmaps(db) {
     ['grade', 'TEXT'], ['fit_score', 'INTEGER DEFAULT 0'], ['priority', 'TEXT'],
     ['marketing_eligible', 'TEXT'], ['opportunity', 'TEXT'],
     ['grade_confidence', 'INTEGER DEFAULT 0'], ['grade_json', "TEXT DEFAULT '{}'"],
+    // outreach workflow (CRM-lite): pipeline state + notes per lead
+    ['outreach_status', "TEXT DEFAULT 'new'"], ['notes', 'TEXT'], ['contacted_at', 'INTEGER'],
   ]) {
     try { db.exec(`ALTER TABLE gmaps_leads ADD COLUMN ${col} ${type}`); } catch { /* column exists */ }
   }
@@ -131,6 +133,8 @@ export function initGmaps(db) {
     updateGrade: db.prepare(`UPDATE gmaps_leads SET grade=@grade, fit_score=@fit_score, priority=@priority,
       marketing_eligible=@marketing_eligible, opportunity=@opportunity, grade_confidence=@grade_confidence,
       grade_json=@grade_json WHERE key=@key`),
+    updateOutreach: db.prepare(`UPDATE gmaps_leads SET outreach_status=@outreach_status, notes=@notes,
+      contacted_at=@contacted_at WHERE key=@key`),
     leadsByLocality: db.prepare(`SELECT key,name,address FROM gmaps_leads WHERE locality=?`),
     leadsByJob: db.prepare(`SELECT * FROM gmaps_leads WHERE job_id=? ORDER BY score DESC`),
     allLeads: db.prepare(`SELECT * FROM gmaps_leads ORDER BY score DESC`),
