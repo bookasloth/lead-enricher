@@ -22,3 +22,7 @@ node_modules/
 
 # keep the UI source (override *.html above); it's code, not scraped data
 !public/index.html
+
+watchdog.out
+watchdog.err
+watchdog.stop
