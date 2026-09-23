@@ -3,525 +3,537 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lead Enricher</title>
+<title>Leadforge — lead scraping & grading</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-  :root { --bg:#0f1115; --panel:#171a21; --line:#262b35; --fg:#e7ebf0; --dim:#8a93a3;
-    --accent:#4f8cff; --ok:#2fbf71; --warn:#e0a83e; --err:#e05656; }
+  :root {
+    --bg:#0e1014; --bg2:#12151c; --panel:#161a22; --panel2:#1b2029; --line:#252b36;
+    --fg:#e8ecf2; --dim:#8b95a6; --dim2:#5f6774; --accent:#5b8cff; --accent2:#3a6bea;
+    --ok:#2fbf71; --warn:#e0a83e; --err:#e05656;
+    --gA1:#39d98a; --gA:#57c98a; --gB:#4f9dff; --gC:#e0b23e; --gD:#8b95a6; --gX:#e05656;
+    --p1:#ff7043; --p2:#e0a83e; --p3:#7b8598; --pex:#4a515e;
+    --radius:11px; --shadow:0 1px 3px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.25);
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
-  header { padding:16px 20px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-  h1 { font-size:16px; margin:0; font-weight:600; }
-  .dim { color:var(--dim); }
-  button { background:var(--accent); color:#fff; border:0; padding:8px 14px; border-radius:7px; cursor:pointer; font:inherit; }
-  button.ghost { background:var(--panel); border:1px solid var(--line); color:var(--fg); }
+  html,body { height:100%; }
+  body { margin:0; font:14px/1.5 system-ui,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--fg);
+    display:grid; grid-template-columns:216px 1fr; }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+  .dim { color:var(--dim); } .dim2 { color:var(--dim2); }
+  button { background:var(--accent); color:#fff; border:0; padding:8px 14px; border-radius:8px; cursor:pointer; font:inherit; font-weight:500; transition:.12s; }
+  button:hover { background:var(--accent2); }
+  button.ghost { background:var(--panel2); border:1px solid var(--line); color:var(--fg); }
+  button.ghost:hover { background:var(--panel); border-color:var(--dim2); }
   button:disabled { opacity:.4; cursor:not-allowed; }
-  #drop { margin:20px; padding:34px; border:2px dashed var(--line); border-radius:12px; text-align:center; color:var(--dim);
-    transition:.15s; cursor:pointer; }
-  #drop.hot { border-color:var(--accent); color:var(--fg); background:#141b2b; }
-  .bar { height:6px; background:var(--panel); border-radius:3px; overflow:hidden; flex:1; min-width:180px; }
-  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:.2s; }
-  .wrap { margin:0 20px 40px; }
-  input[type=search] { background:var(--panel); border:1px solid var(--line); color:var(--fg); padding:7px 10px; border-radius:7px; font:inherit; min-width:220px; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th,td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { position:sticky; top:0; background:var(--bg); cursor:pointer; user-select:none; white-space:nowrap; }
-  th:hover { color:var(--accent); }
-  td a { color:var(--accent); text-decoration:none; }
-  .pill { padding:1px 7px; border-radius:20px; font-size:11px; border:1px solid var(--line); }
-  .st-ok { color:var(--ok); border-color:var(--ok); }
-  .st-no_contact { color:var(--dim); }
-  .st-skipped_social { color:var(--warn); border-color:var(--warn); }
-  .st-error { color:var(--err); border-color:var(--err); }
-  .st-pending { color:var(--dim); }
-  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
-  .copy { cursor:pointer; }
-  .copy:hover { color:var(--accent); }
-  .st-skipped_platform { color:var(--dim); }
-  /* score chip: color by tier hot->cold */
-  .score { display:inline-block; min-width:30px; text-align:center; font-weight:700; padding:2px 7px; border-radius:6px; font-size:12px; }
-  .sc-hot { background:#173a26; color:#57e08c; }      /* >=70 */
-  .sc-warm{ background:#3a3117; color:#e0c04a; }       /* 45-69 */
-  .sc-cold{ background:#2a2f3a; color:var(--dim); }    /* <45 */
-  .tier { font-size:10px; padding:0 5px; border-radius:10px; border:1px solid var(--line); color:var(--dim); margin-left:5px; vertical-align:middle; }
-  .tier-personal { color:var(--ok); border-color:var(--ok); }
-  .tier-role, .tier-personal_offdomain { color:var(--warn); border-color:var(--warn); }
-  .primary { font-weight:600; }
-  tr.lowval { opacity:.45; }
-  .why { color:var(--dim); font-size:12px; max-width:340px; }
-  label.chk { color:var(--dim); display:flex; gap:5px; align-items:center; cursor:pointer; user-select:none; }
-  .src { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:7px 10px; font:inherit; }
+  input,select,textarea { background:var(--panel2); border:1px solid var(--line); color:var(--fg); padding:8px 10px; border-radius:8px; font:inherit; }
+  input:focus,select:focus,textarea:focus { outline:none; border-color:var(--accent); }
+
+  /* ---------- sidebar ---------- */
+  aside { background:var(--bg2); border-right:1px solid var(--line); display:flex; flex-direction:column; padding:16px 12px; gap:4px; position:sticky; top:0; height:100vh; }
+  .brand { display:flex; align-items:center; gap:9px; padding:6px 10px 16px; font-weight:700; font-size:16px; letter-spacing:-.01em; }
+  .brand .logo { width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,var(--accent),#8b5bff); display:grid; place-items:center; color:#fff; font-size:15px; }
+  nav a { display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:8px; color:var(--dim); font-weight:500; }
+  nav a:hover { background:var(--panel); color:var(--fg); text-decoration:none; }
+  nav a.on { background:var(--panel2); color:var(--fg); }
+  nav a .ic { width:17px; text-align:center; opacity:.9; }
+  nav a .badge { margin-left:auto; font-size:11px; background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:0 7px; color:var(--dim); }
+  .side-foot { margin-top:auto; padding:10px; border-top:1px solid var(--line); font-size:12px; color:var(--dim); }
+  .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--dim2); margin-right:6px; }
+  .live-dot.on { background:var(--ok); box-shadow:0 0 0 3px rgba(47,191,113,.18); animation:pulse 1.6s infinite; }
+  @keyframes pulse { 50% { box-shadow:0 0 0 5px rgba(47,191,113,.05); } }
+
+  /* ---------- main ---------- */
+  main { min-width:0; height:100vh; overflow:auto; }
+  .topbar { display:flex; align-items:center; gap:14px; padding:16px 26px; border-bottom:1px solid var(--line); position:sticky; top:0; background:rgba(14,16,20,.86); backdrop-filter:blur(8px); z-index:5; }
+  .topbar h2 { margin:0; font-size:17px; font-weight:650; }
+  .topbar .spacer { flex:1; }
+  .view { padding:24px 26px 60px; }
   .hidden { display:none !important; }
-  /* google maps view */
-  .gm { margin:20px; }
-  .gm-form { display:grid; grid-template-columns:1fr 1fr; gap:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; }
+
+  /* ---------- cards / stats ---------- */
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
+  .stat-b { font-size:28px; font-weight:700; letter-spacing:-.02em; }
+  .stat-l { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.05em; margin-top:2px; }
+  .stat-sub { font-size:12px; margin-top:6px; }
+  .card.accent { background:linear-gradient(160deg,#1a2436,#141922); border-color:#2b3a5c; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
+  .panel-h { padding:14px 16px; border-bottom:1px solid var(--line); font-weight:600; display:flex; align-items:center; gap:10px; }
+  .panel-b { padding:16px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media(max-width:900px){ .grid2{ grid-template-columns:1fr; } body{ grid-template-columns:64px 1fr; } .brand span, nav a span, .side-foot{ display:none; } }
+
+  /* distribution bar */
+  .distbar { display:flex; height:30px; border-radius:8px; overflow:hidden; border:1px solid var(--line); }
+  .distbar > div { display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#0a0d12; min-width:0; transition:.3s; }
+  .legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; font-size:12px; }
+  .legend .sw { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:middle; }
+
+  /* badges */
+  .grade { display:inline-block; min-width:26px; text-align:center; font-weight:800; padding:2px 7px; border-radius:6px; font-size:12px; color:#0a0d12; }
+  .g-Aplus{background:var(--gA1);} .g-A{background:var(--gA);} .g-B{background:var(--gB);color:#fff;} .g-C{background:var(--gC);} .g-D{background:var(--gD);} .g-X{background:var(--gX);color:#fff;}
+  .prio { display:inline-block; padding:1px 8px; border-radius:20px; font-size:11px; font-weight:600; border:1px solid; }
+  .pr-P1{ color:var(--p1); border-color:var(--p1); background:rgba(255,112,67,.1); }
+  .pr-P2{ color:var(--p2); border-color:var(--p2); background:rgba(224,168,62,.08); }
+  .pr-P3{ color:var(--p3); border-color:var(--p3); }
+  .pr-EXCLUDE{ color:var(--pex); border-color:var(--pex); }
+  .score { display:inline-block; min-width:28px; text-align:center; font-weight:700; padding:2px 6px; border-radius:6px; font-size:12px; }
+  .sc-hot{background:#173a26;color:#57e08c;} .sc-warm{background:#3a3117;color:#e0c04a;} .sc-cold{background:#23272f;color:var(--dim);}
+  .st { display:inline-block; padding:1px 9px; border-radius:20px; font-size:11px; border:1px solid var(--line); color:var(--dim); }
+  .st-running{ color:var(--accent); border-color:var(--accent); background:rgba(91,140,255,.1); }
+  .st-done{ color:var(--ok); border-color:var(--ok); }
+  .st-stopped{ color:var(--warn); border-color:var(--warn); }
+  .st-error{ color:var(--err); border-color:var(--err); }
+
+  /* tables */
+  .tbl-wrap { overflow:auto; border-radius:var(--radius); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:middle; white-space:nowrap; }
+  th { position:sticky; top:0; background:var(--panel2); color:var(--dim); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; cursor:pointer; user-select:none; z-index:1; }
+  th:hover { color:var(--fg); }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover { background:var(--panel2); }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .copy { cursor:pointer; } .copy:hover { color:var(--accent); }
+  td .name { font-weight:600; }
+  .why { color:var(--dim); font-size:12px; white-space:normal; width:300px; min-width:220px;
+    overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  td { max-width:280px; overflow:hidden; text-overflow:ellipsis; }
+  .bar { height:6px; background:var(--panel2); border-radius:3px; overflow:hidden; min-width:80px; }
+  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:.3s; }
+
+  /* filter row */
+  .filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+  .filters input[type=search]{ min-width:220px; }
+  .chip { padding:5px 12px; border-radius:20px; border:1px solid var(--line); background:var(--panel); color:var(--dim); cursor:pointer; font-size:12px; }
+  .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .count { color:var(--dim); font-size:13px; margin-left:auto; }
+
+  /* scrape form */
+  .gm-form { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
   .gm-form .full { grid-column:1 / -1; }
-  .gm-form label { display:block; color:var(--dim); font-size:12px; margin-bottom:4px; }
-  .gm-form input, .gm-form textarea { width:100%; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:8px 10px; font:inherit; }
-  .gm-form textarea { min-height:120px; resize:vertical; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
-  .gm-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:6px; }
-  .gm-est { color:var(--dim); }
-  .gm-prog { display:none; margin-top:16px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
-  .gm-prog.on { display:block; }
-  .stat-row { display:flex; gap:22px; flex-wrap:wrap; margin:8px 0; }
-  .stat { min-width:96px; }
-  .stat b { display:block; font-size:20px; }
-  .stat span { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
-  .cov { margin-top:14px; }
-  .cov table { width:auto; min-width:280px; }
-  .cov h3 { font-size:13px; margin:14px 0 6px; color:var(--dim); }
+  .gm-form label { display:block; color:var(--dim); font-size:12px; margin-bottom:5px; }
+  .gm-form input, .gm-form textarea { width:100%; }
+  .gm-form textarea { min-height:150px; resize:vertical; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .gm-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .statrow { display:flex; gap:26px; flex-wrap:wrap; }
+  .statrow .s b { display:block; font-size:22px; font-weight:700; } .statrow .s span { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+
+  /* drawer */
+  .drawer-bg { position:fixed; inset:0; background:rgba(0,0,0,.5); opacity:0; pointer-events:none; transition:.2s; z-index:20; }
+  .drawer-bg.on { opacity:1; pointer-events:auto; }
+  .drawer { position:fixed; top:0; right:0; width:min(460px,92vw); height:100vh; background:var(--panel); border-left:1px solid var(--line); transform:translateX(100%); transition:.25s; z-index:21; overflow:auto; box-shadow:-8px 0 40px rgba(0,0,0,.4); }
+  .drawer.on { transform:none; }
+  .drawer-h { padding:20px; border-bottom:1px solid var(--line); }
+  .drawer-b { padding:20px; display:flex; flex-direction:column; gap:16px; }
+  .kv { display:flex; justify-content:space-between; gap:14px; padding:6px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .kv .k { color:var(--dim); }
+  .bd { display:flex; flex-direction:column; gap:7px; }
+  .bd-row { display:grid; grid-template-columns:130px 1fr 34px; gap:8px; align-items:center; font-size:12px; }
+  .bd-row .bar { min-width:0; }
+  .tag { display:inline-block; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:3px 8px; margin:2px 3px 0 0; font-size:12px; }
+  .tag.warn { border-color:var(--warn); color:var(--warn); }
+  .close-x { float:right; cursor:pointer; color:var(--dim); font-size:20px; line-height:1; }
+  .close-x:hover { color:var(--fg); }
+
+  /* drop zone (backlinks) */
+  #drop { padding:34px; border:2px dashed var(--line); border-radius:12px; text-align:center; color:var(--dim); transition:.15s; cursor:pointer; }
+  #drop.hot { border-color:var(--accent); color:var(--fg); background:#141b2b; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--panel); border:1px solid var(--line); padding:10px 16px; border-radius:9px; box-shadow:var(--shadow); z-index:30; opacity:0; transition:.2s; }
+  .toast.on { opacity:1; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Lead Enricher <span class="dim" id="sub">— drop a Semrush export to begin</span></h1>
-  <select id="source" class="src">
-    <option value="backlinks">Backlinks (Semrush)</option>
-    <option value="gmaps">Google Maps</option>
-  </select>
-  <div class="bar blk" title="progress"><i id="barfill"></i></div>
-  <span class="dim blk" id="prog"></span>
-  <span style="flex:1"></span>
-  <input type="search" id="filter" class="blk" placeholder="filter table…">
-  <label class="chk blk"><input type="checkbox" id="hideLow"> hide low-value</label>
-  <button id="startBtn" class="blk" disabled>Start scraping</button>
-  <button class="ghost blk" id="csvBtn" disabled>CSV</button>
-  <button class="ghost blk" id="jsonBtn" disabled>JSON</button>
-  <button class="ghost blk" id="resetBtn">Reset</button>
-</header>
 
-<div id="drop" class="blk">📄 &nbsp;Drag &amp; drop <b>.xlsx</b> / <b>.csv</b> here, or click to pick.<br>
-  <span class="dim">Auto-detects the “Source url” column. Big files OK — parsed in your browser.</span>
-  <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
-</div>
+<aside>
+  <div class="brand"><span class="logo">◆</span> <span>Leadforge</span></div>
+  <nav id="nav">
+    <a href="#dashboard" data-v="dashboard" class="on"><span class="ic">▚</span><span>Dashboard</span></a>
+    <a href="#leads" data-v="leads"><span class="ic">☰</span><span>Leads</span><span class="badge" id="nav-leads">0</span></a>
+    <a href="#scrape" data-v="scrape"><span class="ic">◎</span><span>Scrape</span></a>
+    <a href="#backlinks" data-v="backlinks"><span class="ic">↗</span><span>Backlinks</span></a>
+  </nav>
+  <div class="side-foot"><span class="live-dot" id="liveDot"></span><span id="liveTxt">idle</span></div>
+</aside>
 
-<div class="wrap blk">
-  <table id="tbl"><thead><tr>
-    <th data-k="score">Score</th>
-    <th data-k="status">Status</th>
-    <th data-k="domain">Domain</th>
-    <th data-k="links_to">Links to</th>
-    <th data-k="intent">Intent</th>
-    <th data-k="name">Name</th>
-    <th data-k="company">Company</th>
-    <th data-k="emails">Contact</th>
-    <th data-k="phones">Phones</th>
-    <th data-k="socials">Socials</th>
-    <th data-k="ascore">DA</th>
-    <th data-k="why">Why contact</th>
-  </tr></thead><tbody id="rows"></tbody></table>
-</div>
+<main>
+  <div class="topbar">
+    <h2 id="viewTitle">Dashboard</h2>
+    <div class="spacer"></div>
+    <button class="ghost" id="regradeBtn" title="Re-grade all stored leads">Re-grade all</button>
+    <button class="ghost" id="exportBtn">Export CSV</button>
+  </div>
 
-<div class="gm hidden" id="gmapsView">
-  <div class="gm-form">
-    <div>
-      <label>City</label>
-      <input id="gmCity" value="Nagpur">
+  <!-- ============ DASHBOARD ============ -->
+  <section class="view" id="v-dashboard">
+    <div class="cards" id="dashCards"></div>
+    <div class="grid2" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-h">Grade distribution</div>
+        <div class="panel-b">
+          <div class="distbar" id="gradeDist"></div>
+          <div class="legend" id="gradeLegend"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Priority split</div>
+        <div class="panel-b">
+          <div class="distbar" id="prioDist"></div>
+          <div class="legend" id="prioLegend"></div>
+        </div>
+      </div>
     </div>
-    <div>
-      <label>Results per area × query</label>
-      <input id="gmCap" type="number" value="60" min="1" max="500">
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-h">Scrape jobs</div>
+      <div class="tbl-wrap">
+        <table><thead><tr><th>#</th><th>Category</th><th>City</th><th>Status</th><th>Progress</th><th>Leads</th><th>Err</th><th></th></tr></thead>
+        <tbody id="jobsRows"></tbody></table>
+      </div>
     </div>
-    <div class="full">
-      <label>Areas / localities (one per line)</label>
-      <textarea id="gmAreas">Dharampeth
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-h">Top categories</div>
+      <div class="panel-b" id="topCats"></div>
+    </div>
+  </section>
+
+  <!-- ============ LEADS ============ -->
+  <section class="view hidden" id="v-leads">
+    <div class="filters">
+      <input type="search" id="q" placeholder="search name / category / phone…">
+      <select id="fGrade"><option value="">All grades</option><option>A+</option><option>A</option><option>B</option><option>C</option><option>D</option><option>X</option></select>
+      <select id="fPrio"><option value="">All priorities</option><option>P1</option><option>P2</option><option>P3</option><option>EXCLUDE</option></select>
+      <select id="fJob"><option value="">All jobs</option></select>
+      <span class="count" id="leadCount"></span>
+    </div>
+    <div class="panel tbl-wrap">
+      <table id="leadTbl"><thead><tr>
+        <th data-k="grade">Grade</th><th data-k="priority">Priority</th><th data-k="fit_score">Fit</th>
+        <th data-k="name">Name</th><th data-k="category">Category</th><th data-k="locality">Locality</th>
+        <th data-k="phone">Phone</th><th data-k="email">Email</th><th>Site</th><th data-k="rating">Rating</th>
+        <th data-k="review_count">Reviews</th><th>Why</th>
+      </tr></thead><tbody id="leadRows"></tbody></table>
+    </div>
+  </section>
+
+  <!-- ============ SCRAPE ============ -->
+  <section class="view hidden" id="v-scrape">
+    <div class="panel">
+      <div class="panel-h">New Google Maps job</div>
+      <div class="panel-b">
+        <div class="gm-form">
+          <div><label>City</label><input id="gmCity" value="Nagpur"></div>
+          <div><label>Results per area × query</label><input id="gmCap" type="number" value="30" min="1" max="500"></div>
+          <div class="full"><label>Areas / localities (one per line)</label><textarea id="gmAreas">Dharampeth
 Ramdaspeth
 Dhantoli
 Sadar
 Sitabuldi
 Civil Lines
 Shankar Nagar
-Ramna Maruti
 Gokulpeth
 Congress Nagar
-Byramji Town
-Mahal
-Itwari
-Gandhibagh
 Medical Square
 Laxmi Nagar
 Pratap Nagar
 Trimurti Nagar
 Khamla
-Somalwada
 Bajaj Nagar
-Swawlambi Nagar
-Wardha Road
-Jaitala
-Gittikhadan
-Chhaoni
 Manish Nagar
 Besa
-Beltarodi
-Nandanvan
-Dighori
-Sakkardara
 Manewada
 Hudkeshwar
-Reshimbagh
-Omkar Nagar
-Chhatrapati Square
-Panchsheel Square
-Ajni Square
-Pardi
-Kalamna
-Lakadganj
-Bagadganj
-Jaripatka
-Kamptee Road
-Mankapur
-Kadbi Chowk
-Indora
 Hingna
 Wadi
-Kamptee
-Wanadongri</textarea>
-    </div>
-    <div class="full">
-      <label>Business / category queries (one per line)</label>
-      <textarea id="gmQueries">Dentist
+Kamptee</textarea></div>
+          <div class="full"><label>Business / category queries (one per line)</label><textarea id="gmQueries">Dentist
 Dental clinic
-Dental hospital
-Dental surgeon
-Cosmetic dentist
-Orthodontist
-Implant dentist
-Pediatric dentist
-Prosthodontist
-Endodontist
-Oral surgeon
-Periodontist</textarea>
+Orthodontist</textarea></div>
+          <div class="gm-actions full">
+            <button id="gmStart">Start scraping</button>
+            <span class="dim" id="gmEst"></span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="gm-actions full">
-      <button id="gmStart">Start scraping</button>
-      <button class="ghost" id="gmResume" disabled>Resume last</button>
-      <button class="ghost" id="gmStop" disabled>Stop</button>
-      <button class="ghost" id="gmCsv">CSV</button>
-      <button class="ghost" id="gmJson">JSON</button>
-      <button class="ghost" id="gmXlsx">Excel</button>
-      <span class="gm-est" id="gmEst"></span>
+    <div class="panel hidden" id="gmProg" style="margin-top:20px">
+      <div class="panel-h">Live progress <span class="st st-running" id="gmStatus">running</span></div>
+      <div class="panel-b">
+        <div class="statrow">
+          <div class="s"><b id="s_cells">0/0</b><span>searches</span></div>
+          <div class="s"><b id="s_raw">0</b><span>raw</span></div>
+          <div class="s"><b id="s_uniq">0</b><span>unique</span></div>
+          <div class="s"><b id="s_dup">0</b><span>dupes</span></div>
+          <div class="s"><b id="s_err">0</b><span>errors</span></div>
+        </div>
+        <div class="bar" style="margin:14px 0 8px"><i id="gmBar"></i></div>
+        <div class="dim" id="gmCur"></div>
+        <div class="gm-actions" style="margin-top:12px"><button class="ghost" id="gmStop">Stop</button></div>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div class="gm-prog" id="gmProg">
-    <div class="stat-row">
-      <div class="stat"><b id="s_cells">0/0</b><span>searches</span></div>
-      <div class="stat"><b id="s_raw">0</b><span>raw results</span></div>
-      <div class="stat"><b id="s_uniq">0</b><span>unique leads</span></div>
-      <div class="stat"><b id="s_dup">0</b><span>duplicates</span></div>
-      <div class="stat"><b id="s_err">0</b><span>errors</span></div>
+  <!-- ============ BACKLINKS ============ -->
+  <section class="view hidden" id="v-backlinks">
+    <div id="drop">📄 &nbsp;Drag &amp; drop <b>.xlsx</b> / <b>.csv</b> Semrush export, or click to pick.<br>
+      <span class="dim">Auto-detects the “Source url” column. Parsed in your browser.</span>
+      <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
     </div>
-    <div class="bar"><i id="gmBar"></i></div>
-    <div class="dim" id="gmCur"></div>
-    <div class="cov" id="gmCov"></div>
-  </div>
+    <div class="gm-actions" style="margin:16px 0">
+      <button id="blStart" disabled>Start enriching</button>
+      <button class="ghost" id="blCsv" disabled>CSV</button>
+      <button class="ghost" id="blReset">Reset</button>
+      <span class="dim" id="blSub">drop a Semrush export to begin</span>
+    </div>
+    <div class="panel tbl-wrap">
+      <table id="blTbl"><thead><tr>
+        <th data-k="score">Score</th><th data-k="status">Status</th><th data-k="domain">Domain</th>
+        <th data-k="intent">Intent</th><th data-k="name">Name</th><th data-k="emails">Contact</th>
+        <th data-k="phones">Phones</th><th data-k="ascore">DA</th><th>Why</th>
+      </tr></thead><tbody id="blRows"></tbody></table>
+    </div>
+  </section>
+</main>
 
-  <div class="wrap">
-    <table id="gmTbl"><thead><tr>
-      <th>Score</th><th>Name</th><th>Category</th><th>Locality</th><th>Phone</th>
-      <th>Email</th><th>Website</th><th>Booking</th><th>WA</th><th>Rating</th><th>Reviews</th>
-      <th>Found</th><th>Why</th>
-    </tr></thead><tbody id="gmRows"></tbody></table>
-  </div>
-</div>
+<div class="drawer-bg" id="drawerBg"></div>
+<div class="drawer" id="drawer"></div>
+<div class="toast" id="toast"></div>
 
 <script>
 const $ = s => document.querySelector(s);
-const rowsEl = $('#rows');
-let DATA = [];              // key -> row map maintained as list
-const byKey = new Map();
-let sortK = 'score', sortDir = -1, filter = '', hideLow = false;
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const gcls = g => ({'A+':'g-Aplus','A':'g-A','B':'g-B','C':'g-C','D':'g-D','X':'g-X'}[g]||'g-D');
+const scoreCell = s => { s=Number(s)||0; const c=s>=70?'sc-hot':s>=45?'sc-warm':'sc-cold'; return `<span class="score ${c}">${s}</span>`; };
+const gradeBadge = g => g?`<span class="grade ${gcls(g)}">${g}</span>`:'';
+const prioBadge = p => p?`<span class="prio pr-${p}">${p}</span>`:'';
+const link = (u,l) => u?`<a href="${esc(u)}" target="_blank" rel="noopener">${l||'link'}</a>`:'';
+const copyable = t => t?`<span class="copy mono" title="copy" onclick="navigator.clipboard.writeText('${esc(t).replace(/'/g,"\\'")}');toast('copied')">${esc(t)}</span>`:'';
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),1400); }
+const GRADE_ORDER=['A+','A','B','C','D','X'], GRADE_COL={'A+':'--gA1','A':'--gA','B':'--gB','C':'--gC','D':'--gD','X':'--gX'};
+const PRIO_ORDER=['P1','P2','P3','EXCLUDE'], PRIO_COL={P1:'--p1',P2:'--p2',P3:'--p3',EXCLUDE:'--pex'};
+const cssv = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
-// ---- spreadsheet parse (browser) ----
-function findCol(headers, ...words) {
-  const lower = headers.map(h => String(h||'').toLowerCase());
-  for (let i=0;i<lower.length;i++) if (words.every(w => lower[i].includes(w))) return i;
-  return -1;
+// ---------- routing ----------
+const VIEWS=['dashboard','leads','scrape','backlinks'];
+const TITLES={dashboard:'Dashboard',leads:'Leads',scrape:'Scrape',backlinks:'Backlinks'};
+function route(){
+  let v=(location.hash||'#dashboard').slice(1); if(!VIEWS.includes(v)) v='dashboard';
+  VIEWS.forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==v));
+  $$('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
+  $('#viewTitle').textContent=TITLES[v];
+  if(v==='dashboard') loadDash();
+  if(v==='leads') loadLeads();
+  if(v==='backlinks') loadBacklinks();
 }
-async function handleFile(f) {
-  $('#sub').textContent = '— reading ' + f.name + '…';
-  const buf = await f.arrayBuffer();
-  const wb = XLSX.read(buf, { type:'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const grid = XLSX.utils.sheet_to_json(ws, { header:1, blankrows:false, defval:'' });
-  if (grid.length < 2) { alert('Sheet looks empty'); return; }
-  const headers = grid[0];
-  let src = findCol(headers,'source','url');
-  if (src<0) src = findCol(headers,'source','page');
-  if (src<0) src = findCol(headers,'referring','page');
-  if (src<0) src = findCol(headers,'url');
-  const tgt = findCol(headers,'target','url');
-  const anc = findCol(headers,'anchor');
-  const asc = findCol(headers,'ascore') >=0 ? findCol(headers,'ascore') : findCol(headers,'score');
-  if (src<0) { alert('Could not find a Source URL column'); return; }
-  const rows = [];
-  for (let i=1;i<grid.length;i++) {
-    const r = grid[i];
-    if (!r[src]) continue;
-    rows.push({ source_url:String(r[src]), target_url: tgt>=0?String(r[tgt]||''):'',
-      anchor: anc>=0?String(r[anc]||''):'', ascore: asc>=0?r[asc]:0 });
-  }
-  $('#sub').textContent = `— ${rows.length} rows, sending…`;
-  // chunked POST to avoid one giant body
-  let added=0, total=0, pending=0;
-  for (let i=0;i<rows.length;i+=5000) {
-    const res = await fetch('/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ rows: rows.slice(i,i+5000) })});
-    const j = await res.json(); added=j.added??added; total=j.total; pending=j.pending;
-  }
-  $('#sub').textContent = `— ${total} unique sources (${pending} to scrape)`;
-  $('#startBtn').disabled = false;
-  $('#csvBtn').disabled = $('#jsonBtn').disabled = false;
-  await loadRows();
-}
+window.addEventListener('hashchange',route);
 
-// ---- drop zone ----
-const drop = $('#drop');
-drop.onclick = () => $('#file').click();
-$('#file').onchange = e => e.target.files[0] && handleFile(e.target.files[0]);
-['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); }));
-['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hot'); }));
-drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
-
-// ---- table render ----
-function socialsCells(json) {
-  try { const s = JSON.parse(json||'{}'); return Object.entries(s).map(([k,v]) =>
-    `<a href="${v[0]}" target="_blank" rel="noopener">${k}</a>`).join(' '); } catch { return ''; }
-}
-function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function copyable(txt,cls){ if(!txt) return ''; return `<span class="copy mono ${cls||''}" title="click to copy" onclick="navigator.clipboard.writeText('${esc(txt).replace(/'/g,"\\'")}')">${esc(txt)}</span>`; }
-const isLow = r => r.is_platform || r.score < 20 || ['no_contact','error','skipped_platform'].includes(r.status);
-function scoreCell(s){ s=Number(s)||0; const c = s>=70?'sc-hot':s>=45?'sc-warm':'sc-cold'; return `<span class="score ${c}">${s}</span>`; }
-// primary contact highlighted with tier badge, then any other emails
-function contactCell(r){
-  const list = (r.emails||'').split(',').map(x=>x.trim()).filter(Boolean);
-  if(!list.length) return '';
-  const others = list.filter(e => e !== r.primary_email);
-  const badge = r.email_tier && r.email_tier!=='none'
-    ? `<span class="tier tier-${r.email_tier}">${r.email_tier.replace('_',' ')}</span>` : '';
-  const head = r.primary_email ? copyable(r.primary_email,'primary')+badge : '';
-  const rest = others.length ? `<div class="dim">${others.map(e=>copyable(e)).join(', ')}</div>` : '';
-  return head + rest;
-}
-function render() {
-  let list = DATA.slice();
-  if (filter) { const f = filter.toLowerCase();
-    list = list.filter(r => [r.domain,r.name,r.company,r.emails,r.phones,r.links_to,r.status,r.intent].join(' ').toLowerCase().includes(f)); }
-  if (hideLow) list = list.filter(r => !isLow(r));
-  if (sortK) list.sort((a,b) => { const x=a[sortK]??'', y=b[sortK]??'';
-    return (typeof x==='number'&&typeof y==='number' ? x-y : String(x).localeCompare(String(y))) * sortDir; });
-  rowsEl.innerHTML = list.map(r => `<tr class="${isLow(r)?'lowval':''}">
-    <td>${scoreCell(r.score)}</td>
-    <td><span class="pill st-${r.status}">${r.status||'pending'}</span></td>
-    <td><a href="${esc(r.source_url)}" target="_blank" rel="noopener">${esc(r.domain)}</a></td>
-    <td>${esc(r.links_to)}</td>
-    <td>${esc(r.intent||'')}</td>
-    <td>${esc(r.name)}</td>
-    <td>${esc(r.company)}</td>
-    <td>${contactCell(r)}</td>
-    <td>${copyable(r.phones)}</td>
-    <td>${socialsCells(r.socials)}</td>
-    <td>${r.ascore||''}</td>
-    <td class="why">${esc(r.why||'')}</td>
-  </tr>`).join('');
-  const hot = DATA.filter(r=>r.score>=70).length;
-  $('#sub').textContent = `— ${list.length} shown / ${DATA.length} total · ${hot} hot (70+)`;
-}
-document.querySelectorAll('th').forEach(th => th.onclick = () => {
-  const k = th.dataset.k; if (sortK===k) sortDir*=-1; else { sortK=k; sortDir=1; } render(); });
-$('#filter').oninput = e => { filter = e.target.value; render(); };
-$('#hideLow').onchange = e => { hideLow = e.target.checked; render(); };
-
-async function loadRows() {
-  const j = await (await fetch('/api/rows')).json();
-  DATA = j.rows; byKey.clear(); DATA.forEach(r => byKey.set(r.key, r)); render();
-}
-function upsert(row) {
-  const ex = byKey.get(row.key);
-  if (ex) Object.assign(ex, row); else { DATA.push(row); byKey.set(row.key, row); }
-}
-
-// ---- progress stream ----
-const es = new EventSource('/api/progress');
-es.onmessage = ev => {
-  const m = JSON.parse(ev.data);
-  if (m.type==='row') {
-    upsert(m.row);
-    $('#barfill').style.width = (m.done/m.total*100) + '%';
-    $('#prog').textContent = `${m.done}/${m.total}`;
-    if (m.done % 15 === 0 || m.done===m.total) render();
-  } else if (m.type==='start') { $('#prog').textContent = `0/${m.total}`; $('#startBtn').disabled=true; }
-  else if (m.type==='done') { $('#prog').textContent = `done ${m.done}/${m.total}`; $('#startBtn').disabled=false; render(); }
-};
-
-$('#startBtn').onclick = () => fetch('/api/start',{method:'POST'});
-$('#csvBtn').onclick  = () => location.href='/api/export.csv';
-$('#jsonBtn').onclick = () => location.href='/api/export.json';
-$('#resetBtn').onclick = async () => { if(!confirm('Wipe all scraped data?'))return;
-  await fetch('/api/reset',{method:'POST'}); DATA=[]; byKey.clear(); render();
-  $('#startBtn').disabled=true; $('#prog').textContent=''; $('#barfill').style.width='0'; };
-
-loadRows();
-
-// ================= Google Maps view =================
-const lines = el => el.value.split('\n').map(s => s.trim()).filter(Boolean);
-let gmJob = 0;
-
-function switchSource(v) {
-  const gmaps = v === 'gmaps';
-  document.querySelectorAll('.blk').forEach(e => e.classList.toggle('hidden', gmaps));
-  $('#gmapsView').classList.toggle('hidden', !gmaps);
-  $('#sub').textContent = gmaps ? '— Google Maps: pick areas + queries, then start' : '— drop a Semrush export to begin';
-  if (gmaps) gmLoadLatest();
-}
-
-// on opening the Google Maps view, attach to the most recent job so a run started
-// earlier (e.g. overnight) shows its progress/coverage/leads and can be resumed.
-async function gmLoadLatest() {
-  try {
-    const j = await (await fetch('/api/gmaps/jobs')).json();
-    const job = (j.jobs || [])[0];
-    if (!job) return;
-    gmJob = job.id;
-    const running = (j.running || []).includes(job.id);
-    $('#gmProg').classList.add('on');
-    $('#s_cells').textContent = `${job.done_cells}/${job.total_cells}`;
-    $('#s_raw').textContent = job.raw_results; $('#s_uniq').textContent = job.unique_leads;
-    $('#s_dup').textContent = job.duplicates; $('#s_err').textContent = job.errors;
-    $('#gmBar').style.width = (job.done_cells / (job.total_cells||1) * 100) + '%';
-    $('#gmCur').textContent = running ? 'running…' : job.status;
-    $('#gmResume').disabled = running || job.status === 'done';
-    $('#gmStop').disabled = !running;
-    const det = await (await fetch('/api/gmaps/jobs/' + job.id)).json();
-    if (job.status === 'done') gmRenderCoverage(det.coverage);
-    gmLoadLeads();
-    if (running) gmPollLatest();
-  } catch {}
-}
-// while a job runs, refresh counters/leads periodically (SSE also updates live if connected)
-let gmPollTimer = 0;
-function gmPollLatest() {
-  clearTimeout(gmPollTimer);
-  gmPollTimer = setTimeout(async () => {
-    try {
-      const det = await (await fetch('/api/gmaps/jobs/' + gmJob)).json();
-      const job = det.job; if (!job) return;
-      $('#s_cells').textContent = `${job.done_cells}/${job.total_cells}`;
-      $('#s_raw').textContent = job.raw_results; $('#s_uniq').textContent = job.unique_leads;
-      $('#s_dup').textContent = job.duplicates; $('#s_err').textContent = job.errors;
-      $('#gmBar').style.width = (job.done_cells / (job.total_cells||1) * 100) + '%';
-      gmLoadLeads();
-      if (det.running) gmPollLatest();
-      else { $('#gmCur').textContent = job.status; $('#gmResume').disabled = job.status === 'done'; $('#gmStop').disabled = true; if (job.status==='done') gmRenderCoverage(det.coverage); }
-    } catch {}
-  }, 5000);
-}
-$('#gmResume').onclick = async () => {
-  if (!gmJob) return;
-  await fetch(`/api/gmaps/jobs/${gmJob}/start`, { method: 'POST' });
-  $('#gmResume').disabled = true; $('#gmStop').disabled = false; $('#gmCur').textContent = 'running…';
-  gmPollLatest();
-};
-$('#source').onchange = e => switchSource(e.target.value);
-
-function gmEstimate() {
-  const n = lines($('#gmAreas')).length * lines($('#gmQueries')).length;
-  $('#gmEst').textContent = `Estimated searches: ${n} (areas ${lines($('#gmAreas')).length} × queries ${lines($('#gmQueries')).length})`;
-}
-$('#gmAreas').oninput = $('#gmQueries').oninput = gmEstimate;
-gmEstimate();
-
-function gmScore(s){ s=Number(s)||0; const c=s>=70?'sc-hot':s>=45?'sc-warm':'sc-cold'; return `<span class="score ${c}">${s}</span>`; }
-function flag(v){ return v==='YES'?'✓':v==='NO'?'–':'?'; }
-function gmLink(u,label){ return u?`<a href="${esc(u)}" target="_blank" rel="noopener">${label||'link'}</a>`:''; }
-
-async function gmLoadLeads() {
-  if (!gmJob) return;
-  const j = await (await fetch('/api/gmaps/leads?job_id=' + gmJob)).json();
-  const rows = j.rows || [];
-  $('#gmRows').innerHTML = rows.map(r => {
-    let reasons = ''; try { reasons = JSON.parse(r.score_reasons_json||'[]').join(' · '); } catch {}
-    return `<tr>
-      <td>${gmScore(r.score)}</td>
-      <td>${gmLink(r.maps_url, esc(r.name)) || esc(r.name)}</td>
-      <td>${esc(r.category)}</td>
-      <td>${esc(r.locality)}</td>
-      <td>${copyable(r.phone)}</td>
-      <td>${copyable(r.email)}</td>
-      <td>${gmLink(r.website,'site')}</td>
-      <td>${gmLink(r.booking_link,'book')}</td>
-      <td>${gmLink(r.whatsapp,'wa')}</td>
-      <td>${r.rating||''}</td>
-      <td>${r.review_count||0}</td>
-      <td>${r.found_count||0}</td>
-      <td class="why">${esc(reasons)}</td>
+// ---------- dashboard ----------
+let STATS=null;
+async function loadDash(){
+  STATS = await (await fetch('/api/gmaps/stats')).json();
+  $('#nav-leads').textContent = STATS.total.toLocaleString();
+  const g=STATS.grade||{}, pr=STATS.priority||{}, el=STATS.eligible||{};
+  const p1=pr.P1||0, aplus=g['A+']||0, yes=el.YES||0, ex=pr.EXCLUDE||0;
+  $('#dashCards').innerHTML = [
+    ['Total leads', STATS.total.toLocaleString(), '', ''],
+    ['P1 — hot', p1.toLocaleString(), `${pct(p1)} of all`, 'accent'],
+    ['A+ graded', aplus.toLocaleString(), pct(aplus), ''],
+    ['Marketing eligible', yes.toLocaleString(), pct(yes), ''],
+    ['Excluded', ex.toLocaleString(), pct(ex), ''],
+  ].map(([l,b,s,cls])=>`<div class="card ${cls}"><div class="stat-b">${b}</div><div class="stat-l">${l}</div><div class="stat-sub dim">${s}</div></div>`).join('');
+  renderDist('#gradeDist','#gradeLegend',GRADE_ORDER,GRADE_COL,g);
+  renderDist('#prioDist','#prioLegend',PRIO_ORDER,PRIO_COL,pr);
+  // jobs
+  const run=new Set(STATS.running||[]);
+  $('#jobsRows').innerHTML = (STATS.jobs||[]).map(j=>{
+    const st = run.has(j.id)?'running':j.status;
+    const prog = Math.round((j.done/(j.total||1))*100);
+    const canResume = st!=='running' && st!=='done' && j.done<j.total;
+    return `<tr onclick="location.hash='#leads';setTimeout(()=>{$('#fJob').value='${j.id}';leadFilters();},60)">
+      <td class="dim">${j.id}</td><td class="name">${esc(j.label||'—')}</td><td>${esc(j.city||'')}</td>
+      <td><span class="st st-${st}">${st}</span></td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div class="bar" style="width:90px"><i style="width:${prog}%"></i></div><span class="dim2" style="font-size:11px">${j.done}/${j.total}</span></div></td>
+      <td>${(j.uniq||0).toLocaleString()}</td><td class="${j.errors?'':'dim2'}">${j.errors||0}</td>
+      <td onclick="event.stopPropagation()">${canResume?`<button class="ghost" style="padding:4px 10px" onclick="resumeJob(${j.id})">Resume</button>`:st==='running'?`<button class="ghost" style="padding:4px 10px" onclick="stopJob(${j.id})">Stop</button>`:''}</td>
     </tr>`;
+  }).join('') || '<tr><td colspan="8" class="dim" style="padding:20px">No jobs yet — start one in Scrape.</td></tr>';
+  $('#topCats').innerHTML = (STATS.top_categories||[]).map(c=>{
+    const w=Math.round((c.n/(STATS.top_categories[0].n||1))*100);
+    return `<div style="display:flex;align-items:center;gap:10px;margin:5px 0"><span style="width:180px" class="dim">${esc(c.k||'—')}</span><div class="bar" style="flex:1"><i style="width:${w}%"></i></div><span class="dim2" style="width:50px;text-align:right">${c.n}</span></div>`;
   }).join('');
 }
+const pct = n => STATS&&STATS.total?`${(100*n/STATS.total).toFixed(1)}%`:'';
+function renderDist(barSel,legSel,order,colMap,data){
+  const tot=order.reduce((a,k)=>a+(data[k]||0),0)||1;
+  $(barSel).innerHTML = order.map(k=>{ const n=data[k]||0; if(!n) return ''; const w=100*n/tot;
+    return `<div style="width:${w}%;background:${cssv(colMap[k])}" title="${k}: ${n}">${w>7?k:''}</div>`; }).join('');
+  $(legSel).innerHTML = order.map(k=>{ const n=data[k]||0; if(!n) return '';
+    return `<span><span class="sw" style="background:${cssv(colMap[k])}"></span>${k} · ${n.toLocaleString()}</span>`; }).join('');
+}
+async function resumeJob(id){ await fetch(`/api/gmaps/jobs/${id}/start`,{method:'POST'}); toast('resumed job '+id); loadDash(); }
+async function stopJob(id){ await fetch(`/api/gmaps/jobs/${id}/stop`,{method:'POST'}); toast('stopping job '+id); }
 
-function gmRenderCoverage(c) {
-  if (!c) return;
-  const loc = Object.entries(c.by_locality||{}).sort((a,b)=>b[1]-a[1])
-    .map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('');
-  $('#gmCov').innerHTML = `<h3>Coverage</h3>
-    <div class="dim">${esc(c.city||'')} · areas ${c.areas_searched} · queries ${c.queries} · searches ${c.completed_searches}/${c.total_searches}</div>
-    <div class="stat-row" style="margin-top:8px">
-      <div class="stat"><b>${c.raw_results}</b><span>raw</span></div>
-      <div class="stat"><b>${c.unique_businesses}</b><span>unique</span></div>
-      <div class="stat"><b>${c.duplicates_removed}</b><span>dupes</span></div>
-      <div class="stat"><b>${c.with_phone}</b><span>phone</span></div>
-      <div class="stat"><b>${c.with_website}</b><span>website</span></div>
-      <div class="stat"><b>${c.with_email}</b><span>email</span></div>
-      <div class="stat"><b>${c.with_booking}</b><span>booking</span></div>
-      <div class="stat"><b>${c.with_whatsapp}</b><span>whatsapp</span></div>
+// ---------- leads ----------
+let leadSort='fit_score', leadDir=-1, leadTimer=0;
+function leadFilters(){ clearTimeout(leadTimer); leadTimer=setTimeout(loadLeads,180); }
+async function loadLeads(){
+  const p=new URLSearchParams();
+  if($('#q').value.trim()) p.set('q',$('#q').value.trim());
+  if($('#fGrade').value) p.set('grade',$('#fGrade').value);
+  if($('#fPrio').value) p.set('priority',$('#fPrio').value);
+  if($('#fJob').value) p.set('job_id',$('#fJob').value);
+  p.set('limit','500');
+  const j = await (await fetch('/api/gmaps/leads?'+p)).json();
+  let rows=j.rows||[];
+  rows.sort((a,b)=>{ const x=a[leadSort]??'',y=b[leadSort]??''; return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*leadDir; });
+  LEADCACHE={}; rows.forEach(r=>LEADCACHE[r.key]=r);
+  $('#leadCount').textContent = `${rows.length} shown · ${j.total.toLocaleString()} match`;
+  $('#leadRows').innerHTML = rows.map(r=>{
+    let why=''; try{ why=(JSON.parse(r.grade_json||'{}').reasons||[]).slice(0,2).join(' · '); }catch{}
+    return `<tr onclick="openLead('${esc(r.key).replace(/'/g,"\\'")}')">
+      <td>${gradeBadge(r.grade)}</td><td>${prioBadge(r.priority)}</td><td>${scoreCell(r.fit_score)}</td>
+      <td><span class="name">${link(r.maps_url,esc(r.name))||esc(r.name)}</span></td>
+      <td>${esc(r.category)}</td><td>${esc(r.locality)}</td>
+      <td>${copyable(r.phone)}</td><td>${copyable(r.email)}</td><td>${link(r.website,'site')}</td>
+      <td>${r.rating||''}</td><td>${r.review_count||0}</td><td class="why">${esc(why)}</td></tr>`;
+  }).join('') || '<tr><td colspan="12" class="dim" style="padding:20px">No leads match.</td></tr>';
+}
+let LEADCACHE={};
+['#q','#fGrade','#fPrio','#fJob'].forEach(s=>$(s).addEventListener('input',leadFilters));
+$$('#leadTbl th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(leadSort===k)leadDir*=-1; else{leadSort=k;leadDir=(k==='name'||k==='category'||k==='locality')?1:-1;} loadLeads(); });
+
+// ---------- lead drawer ----------
+function openLead(key){
+  const r=LEADCACHE[key]; if(!r) return;
+  let d={}; try{ d=JSON.parse(r.grade_json||'{}'); }catch{}
+  const bd=d.breakdown||{};
+  const bdMax={appointment_fit:30,automation_opportunity:20,business_activity:15,customer_volume:15,online_presence:10,contactability:10};
+  const bdRows=Object.entries(bd).map(([k,v])=>`<div class="bd-row"><span class="dim">${k.replace(/_/g,' ')}</span><div class="bar"><i style="width:${Math.round(100*v/(bdMax[k]||30))}%"></i></div><b>${v}</b></div>`).join('');
+  const reasons=(d.reasons||[]).map(x=>`<span class="tag">${esc(x)}</span>`).join('');
+  const concerns=(d.concerns||[]).map(x=>`<span class="tag warn">${esc(x)}</span>`).join('');
+  const kv=(k,v)=>v?`<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`:'';
+  $('#drawer').innerHTML = `<div class="drawer-h">
+      <span class="close-x" onclick="closeDrawer()">✕</span>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">${gradeBadge(r.grade)}${prioBadge(r.priority)}<span class="st">${esc(r.marketing_eligible||'')}</span></div>
+      <div style="font-size:18px;font-weight:700">${esc(r.name)}</div>
+      <div class="dim">${esc(r.category)} · ${esc(r.locality||r.address||'')}</div>
     </div>
-    <h3>By locality</h3><table><thead><tr><th>Locality</th><th>Leads</th></tr></thead><tbody>${loc}</tbody></table>`;
+    <div class="drawer-b">
+      <div>
+        <div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Fit ${r.fit_score}/100 · ${esc(d.normalized_category||'')} · ${esc(d.appt_tier||'')}</div>
+        <div class="bd">${bdRows}</div>
+      </div>
+      ${reasons?`<div><div class="dim" style="margin-bottom:4px">Why</div>${reasons}</div>`:''}
+      ${concerns?`<div><div class="dim" style="margin-bottom:4px">Concerns</div>${concerns}</div>`:''}
+      <div>
+        ${kv('Phone',copyable(r.phone))}${kv('Email',copyable(r.email))}
+        ${kv('Website',link(r.website,r.website))}${kv('Booking',r.booking_link?link(r.booking_link,d.booking_platform||'link'):(d.booking||''))}
+        ${kv('WhatsApp',link(r.whatsapp,'wa'))}${kv('Rating',r.rating?`${r.rating}★ (${r.review_count||0} reviews)`:'')}
+        ${kv('Signal score',r.score)}${kv('Opportunity',r.opportunity)}
+        ${kv('Data quality',d.data_quality!=null?d.data_quality+'/100':'')}${kv('Maps',link(r.maps_url,'open in Maps'))}
+      </div>
+    </div>`;
+  $('#drawer').classList.add('on'); $('#drawerBg').classList.add('on');
+}
+function closeDrawer(){ $('#drawer').classList.remove('on'); $('#drawerBg').classList.remove('on'); }
+$('#drawerBg').onclick=closeDrawer;
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrawer(); });
+
+// ---------- scrape ----------
+const lines = el => el.value.split('\n').map(s=>s.trim()).filter(Boolean);
+let gmJob=0;
+function gmEstimate(){ const a=lines($('#gmAreas')).length,q=lines($('#gmQueries')).length; $('#gmEst').textContent=`≈ ${a*q} searches (${a} areas × ${q} queries)`; }
+$('#gmAreas').oninput=$('#gmQueries').oninput=gmEstimate;
+$('#gmStart').onclick=async()=>{
+  const body={city:$('#gmCity').value,areas:lines($('#gmAreas')),queries:lines($('#gmQueries')),cap:Number($('#gmCap').value)||30};
+  if(!body.areas.length||!body.queries.length){ toast('add areas + queries'); return; }
+  const j=await (await fetch('/api/gmaps/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(j.error){ toast(j.error); return; }
+  gmJob=j.job_id; $('#gmProg').classList.remove('hidden'); $('#s_cells').textContent='0/'+j.total_cells; toast('job '+gmJob+' started');
+};
+$('#gmStop').onclick=()=>{ if(gmJob) fetch(`/api/gmaps/jobs/${gmJob}/stop`,{method:'POST'}); };
+function gmAttachLatest(){
+  fetch('/api/gmaps/jobs').then(r=>r.json()).then(j=>{
+    const job=(j.jobs||[])[0]; if(!job) return; gmJob=job.id;
+    const running=(j.running||[]).includes(job.id);
+    if(job.status==='running'||running){ $('#gmProg').classList.remove('hidden'); paintJob(job,running); }
+  });
+}
+function paintJob(job,running){
+  $('#s_cells').textContent=`${job.done_cells}/${job.total_cells}`; $('#s_raw').textContent=job.raw_results;
+  $('#s_uniq').textContent=job.unique_leads; $('#s_dup').textContent=job.duplicates; $('#s_err').textContent=job.errors;
+  $('#gmBar').style.width=(job.done_cells/(job.total_cells||1)*100)+'%';
+  const st=running?'running':job.status; $('#gmStatus').textContent=st; $('#gmStatus').className='st st-'+st; $('#gmStop').disabled=!running;
 }
 
-$('#gmStart').onclick = async () => {
-  const body = { city: $('#gmCity').value, areas: lines($('#gmAreas')), queries: lines($('#gmQueries')), cap: Number($('#gmCap').value)||60 };
-  if (!body.areas.length || !body.queries.length) { alert('Add at least one area and one query'); return; }
-  const res = await fetch('/api/gmaps/jobs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  const j = await res.json();
-  if (j.error) { alert(j.error); return; }
-  gmJob = j.job_id;
-  $('#gmProg').classList.add('on');
-  $('#gmStart').disabled = true; $('#gmStop').disabled = false;
-  $('#s_cells').textContent = '0/' + j.total_cells;
-  $('#gmCov').innerHTML = '';
-};
-$('#gmStop').onclick = () => { if (gmJob) fetch(`/api/gmaps/jobs/${gmJob}/stop`, { method:'POST' }); };
-$('#gmCsv').onclick  = () => gmJob && (location.href = '/api/gmaps/export.csv?job_id=' + gmJob);
-$('#gmJson').onclick = () => gmJob && (location.href = '/api/gmaps/export.json?job_id=' + gmJob);
-$('#gmXlsx').onclick = async () => {
-  if (!gmJob) return;
-  const rows = await (await fetch('/api/gmaps/export.json?job_id=' + gmJob)).json();
-  const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'leads'); XLSX.writeFile(wb, 'gmaps-leads.xlsx');
-};
-
-let gmThrottle = 0;
-es.addEventListener('message', ev => {
-  let m; try { m = JSON.parse(ev.data); } catch { return; }
-  if (!m.type || !String(m.type).startsWith('gmaps')) return;
-  if (m.job_id && gmJob && m.job_id !== gmJob) return;
-  if (m.type === 'gmaps_progress') {
-    $('#s_cells').textContent = `${m.done_cells}/${m.total_cells}`;
-    $('#s_raw').textContent = m.raw_results; $('#s_uniq').textContent = m.unique_leads;
-    $('#s_dup').textContent = m.duplicates; $('#s_err').textContent = m.errors;
-    $('#gmBar').style.width = (m.done_cells / (m.total_cells||1) * 100) + '%';
-    $('#gmCur').textContent = `current: ${m.area||''} · ${m.query||''}`;
-    if (Date.now() - gmThrottle > 1500) { gmThrottle = Date.now(); gmLoadLeads(); }
-  } else if (m.type === 'gmaps_done') {
-    $('#gmStart').disabled = false; $('#gmStop').disabled = true;
-    $('#gmCur').textContent = 'done';
-    gmRenderCoverage(m);
-    gmLoadLeads();
-  } else if (m.type === 'gmaps_error') {
-    $('#gmStart').disabled = false; $('#gmStop').disabled = true;
-    $('#gmCur').textContent = 'error: ' + (m.error||'');
+// ---------- SSE (shared) ----------
+const es=new EventSource('/api/progress');
+es.onmessage=ev=>{ let m; try{m=JSON.parse(ev.data);}catch{return;}
+  if(m.type&&String(m.type).startsWith('gmaps')){
+    setLive(true);
+    if(m.type==='gmaps_progress'){
+      if(!gmJob) gmJob=m.job_id;
+      if(m.job_id===gmJob){ paintJob({done_cells:m.done_cells,total_cells:m.total_cells,raw_results:m.raw_results,unique_leads:m.unique_leads,duplicates:m.duplicates,errors:m.errors,status:'running'},true);
+        $('#gmCur').textContent=`current: ${m.area||''} · ${m.query||''}`; }
+    } else if(m.type==='gmaps_done'){ $('#gmStatus').textContent='done'; $('#gmStatus').className='st st-done'; $('#gmStop').disabled=true; $('#gmCur').textContent='done'; setLive(false); if(!$('#v-dashboard').classList.contains('hidden'))loadDash(); }
+    return;
   }
-});
+  // backlinks stream
+  if(m.type==='row'){ blUpsert(m.row); if(m.done%15===0||m.done===m.total) blRender(); }
+  else if(m.type==='done'){ setLive(false); blRender(); }
+};
+function setLive(on){ $('#liveDot').classList.toggle('on',on); $('#liveTxt').textContent=on?'scraping…':'idle'; }
+
+// ---------- topbar actions ----------
+$('#exportBtn').onclick=()=>{ const jid=$('#fJob').value; location.href='/api/gmaps/export.csv'+(jid?'?job_id='+jid:''); };
+$('#regradeBtn').onclick=async()=>{ if(!confirm('Re-grade all stored leads?'))return; $('#regradeBtn').disabled=true; $('#regradeBtn').textContent='Grading…';
+  const j=await (await fetch('/api/gmaps/grade-all',{method:'POST'})).json(); toast(`graded ${j.graded}`); $('#regradeBtn').disabled=false; $('#regradeBtn').textContent='Re-grade all'; loadDash(); };
+
+// ---------- backlinks (Semrush) ----------
+let BL=[]; const blByKey=new Map(); let blSort='score',blDir=-1;
+const drop=$('#drop');
+drop.onclick=()=>$('#file').click();
+$('#file').onchange=e=>e.target.files[0]&&blHandle(e.target.files[0]);
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
+drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0]; if(f)blHandle(f);});
+function findCol(h,...w){ const l=h.map(x=>String(x||'').toLowerCase()); for(let i=0;i<l.length;i++) if(w.every(x=>l[i].includes(x)))return i; return -1; }
+async function blHandle(f){
+  $('#blSub').textContent='reading '+f.name+'…';
+  const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
+  const grid=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''}); if(grid.length<2){toast('empty sheet');return;}
+  const h=grid[0]; let src=findCol(h,'source','url'); if(src<0)src=findCol(h,'source','page'); if(src<0)src=findCol(h,'referring','page'); if(src<0)src=findCol(h,'url');
+  const tgt=findCol(h,'target','url'),anc=findCol(h,'anchor'),asc=findCol(h,'ascore')>=0?findCol(h,'ascore'):findCol(h,'score');
+  if(src<0){toast('no Source URL column');return;}
+  const rows=[]; for(let i=1;i<grid.length;i++){const r=grid[i]; if(!r[src])continue; rows.push({source_url:String(r[src]),target_url:tgt>=0?String(r[tgt]||''):'',anchor:anc>=0?String(r[anc]||''):'',ascore:asc>=0?r[asc]:0});}
+  let total=0,pending=0; for(let i=0;i<rows.length;i+=5000){ const j=await (await fetch('/api/ingest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:rows.slice(i,i+5000)})})).json(); total=j.total;pending=j.pending; }
+  $('#blSub').textContent=`${total} unique sources (${pending} to scrape)`; $('#blStart').disabled=false; $('#blCsv').disabled=false; loadBacklinks();
+}
+async function loadBacklinks(){ const j=await (await fetch('/api/rows')).json(); BL=j.rows; blByKey.clear(); BL.forEach(r=>blByKey.set(r.key,r)); blRender(); }
+function blUpsert(row){ const e=blByKey.get(row.key); if(e)Object.assign(e,row); else{BL.push(row);blByKey.set(row.key,row);} }
+function blRender(){
+  let list=BL.slice(); list.sort((a,b)=>{const x=a[blSort]??'',y=b[blSort]??''; return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*blDir;});
+  $('#blRows').innerHTML=list.slice(0,600).map(r=>`<tr>
+    <td>${scoreCell(r.score)}</td><td><span class="st">${esc(r.status||'pending')}</span></td>
+    <td>${link(r.source_url,esc(r.domain))}</td><td>${esc(r.intent||'')}</td><td>${esc(r.name)}</td>
+    <td>${copyable(r.primary_email||r.emails)}</td><td>${copyable(r.phones)}</td><td>${r.ascore||''}</td>
+    <td class="why">${esc(r.why||'')}</td></tr>`).join('') || '<tr><td colspan="9" class="dim" style="padding:20px">No rows yet.</td></tr>';
+}
+$$('#blTbl th[data-k]').forEach(th=>th.onclick=()=>{const k=th.dataset.k; if(blSort===k)blDir*=-1; else{blSort=k;blDir=-1;} blRender();});
+$('#blStart').onclick=()=>{ fetch('/api/start',{method:'POST'}); setLive(true); toast('enriching…'); };
+$('#blCsv').onclick=()=>location.href='/api/export.csv';
+$('#blReset').onclick=async()=>{ if(!confirm('Wipe backlink data?'))return; await fetch('/api/reset',{method:'POST'}); BL=[];blByKey.clear();blRender(); $('#blStart').disabled=true; };
+
+// ---------- boot ----------
+(async function(){
+  gmEstimate(); route();
+  // populate job filter
+  try{ const s=await (await fetch('/api/gmaps/stats')).json();
+    $('#fJob').innerHTML='<option value="">All jobs</option>'+(s.jobs||[]).map(j=>`<option value="${j.id}">#${j.id} ${esc(j.label||'')}</option>`).join('');
+    setLive((s.running||[]).length>0);
+  }catch{}
+  gmAttachLatest();
+})();
 </script>
 </body>
 </html>

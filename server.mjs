@@ -468,10 +468,40 @@ async function handleGmaps(req, res, url) {
     if (!job) return send(res, 404, 'application/json', JSON.stringify({ error: 'no such job' }));
     return send(res, 200, 'application/json', JSON.stringify({ job, coverage: coverageReport(G, id), searches: G.allSearches.all(id), running: gmapsRunning.has(id) }));
   }
+  // dashboard aggregates — grade/priority/eligible distributions + per-job summary
+  if (req.method === 'GET' && p === '/api/gmaps/stats') {
+    const grp = (col) => db.prepare(`SELECT ${col} k, COUNT(*) n FROM gmaps_leads GROUP BY ${col}`).all()
+      .reduce((o, r) => (o[r.k || '?'] = r.n, o), {});
+    const total = db.prepare('SELECT COUNT(*) n FROM gmaps_leads').get().n;
+    const cats = db.prepare('SELECT category k, COUNT(*) n FROM gmaps_leads GROUP BY category ORDER BY n DESC LIMIT 12').all();
+    const jobs = G.listJobs.all().map(j => {
+      let label = ''; try { label = (JSON.parse(j.params_json).queries || [])[0] || ''; } catch { /* */ }
+      return { id: j.id, label, city: j.city, status: j.status, done: j.done_cells,
+        total: j.total_cells, uniq: j.unique_leads, errors: j.errors };
+    });
+    return send(res, 200, 'application/json', JSON.stringify({
+      total, grade: grp('grade'), priority: grp('priority'), eligible: grp('marketing_eligible'),
+      top_categories: cats, jobs, running: [...gmapsRunning],
+    }));
+  }
+
+  // filterable, server-side paged leads (grade/priority/job/search), best fit first
   if (req.method === 'GET' && p === '/api/gmaps/leads') {
+    const args = {};
+    const where = [];
     const jid = Number(url.searchParams.get('job_id')) || 0;
-    const rows = jid ? G.leadsByJob.all(jid) : G.allLeads.all();
-    return send(res, 200, 'application/json', JSON.stringify({ rows }));
+    if (jid) { where.push('job_id=@jid'); args.jid = jid; }
+    const grade = url.searchParams.get('grade'); if (grade) { where.push('grade=@grade'); args.grade = grade; }
+    const priority = url.searchParams.get('priority'); if (priority) { where.push('priority=@priority'); args.priority = priority; }
+    const qs = (url.searchParams.get('q') || '').trim();
+    if (qs) { where.push('(name LIKE @q OR category LIKE @q OR locality LIKE @q OR phone LIKE @q OR email LIKE @q)'); args.q = '%' + qs + '%'; }
+    const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const limit = Math.min(2000, Number(url.searchParams.get('limit')) || 500);
+    const offset = Number(url.searchParams.get('offset')) || 0;
+    const rows = db.prepare(`SELECT * FROM gmaps_leads ${w} ORDER BY fit_score DESC, score DESC LIMIT @limit OFFSET @offset`)
+      .all({ ...args, limit, offset });
+    const total = db.prepare(`SELECT COUNT(*) n FROM gmaps_leads ${w}`).get(args).n;
+    return send(res, 200, 'application/json', JSON.stringify({ rows, total }));
   }
   if (req.method === 'GET' && (p === '/api/gmaps/export.csv' || p === '/api/gmaps/export.json')) {
     const jid = Number(url.searchParams.get('job_id')) || 0;
