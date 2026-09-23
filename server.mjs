@@ -532,14 +532,24 @@ async function handleGmaps(req, res, url) {
     return send(res, 200, 'application/json', JSON.stringify({ rows, total }));
   }
   if (req.method === 'GET' && (p === '/api/gmaps/export.csv' || p === '/api/gmaps/export.json')) {
-    const jid = Number(url.searchParams.get('job_id')) || 0;
     const raw = url.searchParams.get('raw') === '1';
-    const rows = jid ? G.leadsByJob.all(jid) : G.allLeads.all();
+    const args = {}; const where = [];
+    const jid = Number(url.searchParams.get('job_id')) || 0;
+    if (jid) { where.push('job_id=@jid'); args.jid = jid; }
+    const grade = url.searchParams.get('grade'); if (grade) { where.push('grade=@grade'); args.grade = grade; }
+    const priority = url.searchParams.get('priority'); if (priority) { where.push('priority=@priority'); args.priority = priority; }
+    const outreach = url.searchParams.get('outreach'); if (outreach) { where.push('outreach_status=@outreach'); args.outreach = outreach; }
+    const qs = (url.searchParams.get('q') || '').trim();
+    if (qs) { where.push('(name LIKE @q OR category LIKE @q OR locality LIKE @q OR phone LIKE @q OR email LIKE @q)'); args.q = '%' + qs + '%'; }
+    const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const rows = db.prepare(`SELECT * FROM gmaps_leads ${w} ORDER BY fit_score DESC, score DESC`).all(args);
+    const tag = [grade, priority, outreach, jid ? 'job' + jid : ''].filter(Boolean).join('-') || 'all';
+    const fname = `gmaps-leads-${tag}`;
     if (p.endsWith('.csv')) {
-      res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="gmaps-leads.csv"' });
+      res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="${fname}.csv"` });
       return res.end(gexport.toCSV(rows, raw));
     }
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="gmaps-leads.json"' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${fname}.json"` });
     return res.end(gexport.toJSON(rows, raw));
   }
   return send(res, 404, 'application/json', JSON.stringify({ error: 'unknown gmaps route' }));

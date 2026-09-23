@@ -584,7 +584,7 @@ es.onmessage=ev=>{ let m; try{m=JSON.parse(ev.data);}catch{return;}
 function setLive(on){ $('#liveDot').classList.toggle('on',on); $('#liveTxt').textContent=on?'scraping…':'idle'; }
 
 // ---------- topbar actions ----------
-$('#exportBtn').onclick=()=>{ const jid=$('#fJob').value; location.href='/api/gmaps/export.csv'+(jid?'?job_id='+jid:''); };
+$('#exportBtn').onclick=()=>{ const p=leadQuery(); location.href='/api/gmaps/export.csv'+(p.toString()?'?'+p:''); };
 $('#regradeBtn').onclick=async()=>{ if(!confirm('Re-grade all stored leads?'))return; $('#regradeBtn').disabled=true; $('#regradeBtn').textContent='Grading…';
   const j=await (await fetch('/api/gmaps/grade-all',{method:'POST'})).json(); toast(`graded ${j.graded}`); $('#regradeBtn').disabled=false; $('#regradeBtn').textContent='Re-grade all'; loadDash(); };
 
