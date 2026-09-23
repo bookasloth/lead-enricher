@@ -505,7 +505,7 @@ async function handleGmaps(req, res, url) {
     const jobs = G.listJobs.all().map(j => {
       let label = ''; try { label = (JSON.parse(j.params_json).queries || [])[0] || ''; } catch { /* */ }
       return { id: j.id, label, city: j.city, status: j.status, done: j.done_cells,
-        total: j.total_cells, uniq: j.unique_leads, errors: j.errors };
+        total: j.total_cells, uniq: j.unique_leads, errors: j.errors, started_at: j.started_at };
     });
     return send(res, 200, 'application/json', JSON.stringify({
       total, grade: grp('grade'), priority: grp('priority'), eligible: grp('marketing_eligible'),

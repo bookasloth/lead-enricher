@@ -208,7 +208,7 @@
     <div class="panel" style="margin-top:20px">
       <div class="panel-h">Scrape jobs</div>
       <div class="tbl-wrap">
-        <table><thead><tr><th>#</th><th>Category</th><th>City</th><th>Status</th><th>Progress</th><th>Leads</th><th>Err</th><th></th></tr></thead>
+        <table><thead><tr><th>#</th><th>Category</th><th>City</th><th>Status</th><th>Progress</th><th>ETA</th><th>Leads</th><th>Err</th><th></th></tr></thead>
         <tbody id="jobsRows"></tbody></table>
       </div>
     </div>
@@ -290,6 +290,10 @@ Orthodontist</textarea></div>
           <div class="s"><b id="s_err">0</b><span>errors</span></div>
         </div>
         <div class="bar" style="margin:14px 0 8px"><i id="gmBar"></i></div>
+        <div style="display:flex;justify-content:space-between;margin:4px 0 8px;flex-wrap:wrap;gap:4px" class="dim">
+          <span id="gmElapsed"></span>
+          <span id="gmEta" style="font-weight:600;color:var(--accent)"></span>
+        </div>
         <div class="dim" id="gmCur"></div>
         <div class="gm-actions" style="margin-top:12px"><button class="ghost" id="gmStop">Stop</button></div>
       </div>
@@ -442,10 +446,11 @@ async function loadDash(){
       <td class="dim">${j.id}</td><td class="name">${esc(j.label||'—')}</td><td>${esc(j.city||'')}</td>
       <td><span class="st st-${st}">${st}</span></td>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="bar" style="width:90px"><i style="width:${prog}%"></i></div><span class="dim2" style="font-size:11px">${j.done}/${j.total}</span></div></td>
+      <td class="dim2" style="font-size:11px">${st==='running'&&j.started_at&&j.done>0?(()=>{const el=Date.now()-j.started_at;const rem=(j.total-j.done)*(el/j.done);return fmtDur(rem);})():(st==='done'&&j.started_at?'done':'—')}</td>
       <td>${(j.uniq||0).toLocaleString()}</td><td class="${j.errors?'':'dim2'}">${j.errors||0}</td>
       <td onclick="event.stopPropagation()">${canResume?`<button class="ghost" style="padding:4px 10px" onclick="resumeJob(${j.id})">Resume</button>`:st==='running'?`<button class="ghost" style="padding:4px 10px" onclick="stopJob(${j.id})">Stop</button>`:''}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" class="dim" style="padding:20px">No jobs yet — start one in Scrape.</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="dim" style="padding:20px">No jobs yet — start one in Scrape.</td></tr>';
   $('#topCats').innerHTML = (STATS.top_categories||[]).map(c=>{
     const w=Math.round((c.n/(STATS.top_categories[0].n||1))*100);
     return `<div style="display:flex;align-items:center;gap:10px;margin:5px 0"><span style="width:180px" class="dim">${esc(c.k||'—')}</span><div class="bar" style="flex:1"><i style="width:${w}%"></i></div><span class="dim2" style="width:50px;text-align:right">${c.n}</span></div>`;
@@ -581,14 +586,30 @@ function gmAttachLatest(){
   fetch('/api/gmaps/jobs').then(r=>r.json()).then(j=>{
     const job=(j.jobs||[])[0]; if(!job) return; gmJob=job.id;
     const running=(j.running||[]).includes(job.id);
-    if(job.status==='running'||running){ $('#gmProg').classList.remove('hidden'); paintJob(job,running); }
+    if(job.status==='running'||running){ $('#gmProg').classList.remove('hidden'); gmStartedAt=job.started_at||0; paintJob(job,running); }
   });
 }
+let gmStartedAt=0,gmLastDone=0,gmLastTotal=0,gmIsRunning=false;
+function fmtDur(ms){if(ms<0)ms=0;const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);return h?`${h}h ${m%60}m`:`${m}m ${s%60}s`;}
+setInterval(()=>{if(!gmStartedAt||!gmIsRunning||!gmLastDone)return;const el=Date.now()-gmStartedAt;const rate=el/gmLastDone;const rem=(gmLastTotal-gmLastDone)*rate;$('#gmElapsed').textContent='Elapsed: '+fmtDur(el);if(gmLastDone<gmLastTotal)$('#gmEta').textContent='ETA: '+fmtDur(rem)+' ('+Math.round(gmLastDone/gmLastTotal*100)+'%)';},1000);
 function paintJob(job,running){
   $('#s_cells').textContent=`${job.done_cells}/${job.total_cells}`; $('#s_raw').textContent=job.raw_results;
   $('#s_uniq').textContent=job.unique_leads; $('#s_dup').textContent=job.duplicates; $('#s_err').textContent=job.errors;
   $('#gmBar').style.width=(job.done_cells/(job.total_cells||1)*100)+'%';
   const st=running?'running':job.status; $('#gmStatus').textContent=st; $('#gmStatus').className='st st-'+st; $('#gmStop').disabled=!running;
+  if(job.started_at) gmStartedAt=job.started_at;
+  gmLastDone=job.done_cells; gmLastTotal=job.total_cells; gmIsRunning=running;
+  if(gmStartedAt && job.done_cells>0){
+    const elapsed=Date.now()-gmStartedAt;
+    const rate=elapsed/job.done_cells;
+    const remaining=(job.total_cells-job.done_cells)*rate;
+    $('#gmElapsed').textContent='Elapsed: '+fmtDur(elapsed);
+    if(running && job.done_cells<job.total_cells){
+      $('#gmEta').textContent='ETA: '+fmtDur(remaining)+' ('+Math.round(job.done_cells/(job.total_cells||1)*100)+'%)';
+    } else if(!running||job.done_cells>=job.total_cells){
+      $('#gmEta').textContent='Done in '+fmtDur(elapsed);
+    }
+  }
 }
 
 // ---------- contact enrichment ----------
@@ -629,7 +650,7 @@ es.onmessage=ev=>{ let m; try{m=JSON.parse(ev.data);}catch{return;}
     setLive(true);
     if(m.type==='gmaps_progress'){
       if(!gmJob) gmJob=m.job_id;
-      if(m.job_id===gmJob){ paintJob({done_cells:m.done_cells,total_cells:m.total_cells,raw_results:m.raw_results,unique_leads:m.unique_leads,duplicates:m.duplicates,errors:m.errors,status:'running'},true);
+      if(m.job_id===gmJob){ paintJob({done_cells:m.done_cells,total_cells:m.total_cells,raw_results:m.raw_results,unique_leads:m.unique_leads,duplicates:m.duplicates,errors:m.errors,started_at:m.started_at,status:'running'},true);
         $('#gmCur').textContent=`current: ${m.area||''} · ${m.query||''}`; }
     } else if(m.type==='gmaps_done'){ $('#gmStatus').textContent='done'; $('#gmStatus').className='st st-done'; $('#gmStop').disabled=true; $('#gmCur').textContent='done'; setLive(false); if(!$('#v-dashboard').classList.contains('hidden'))loadDash(); }
     return;

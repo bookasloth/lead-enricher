@@ -46,7 +46,7 @@ export async function runJob(q, jobId, deps) {
       done++;
       bump(q, jobId, { done, raw, uniq, dup, err });
       broadcast({ type: 'gmaps_progress', job_id: jobId, done_cells: done, total_cells: job.total_cells,
-        raw_results: raw, unique_leads: uniq, duplicates: dup, errors: err, area: cell.area, query: cell.query });
+        raw_results: raw, unique_leads: uniq, duplicates: dup, errors: err, area: cell.area, query: cell.query, started_at: job.started_at });
       continue;
     }
 
@@ -76,7 +76,7 @@ export async function runJob(q, jobId, deps) {
     done++;
     bump(q, jobId, { done, raw, uniq, dup, err });
     broadcast({ type: 'gmaps_progress', job_id: jobId, done_cells: done, total_cells: job.total_cells,
-      raw_results: raw, unique_leads: uniq, duplicates: dup, errors: err, area: cell.area, query: cell.query });
+      raw_results: raw, unique_leads: uniq, duplicates: dup, errors: err, area: cell.area, query: cell.query, started_at: job.started_at });
   }
 
   q.setJobStatus.run({ id: jobId, status: 'done', completed_at: Date.now() });
