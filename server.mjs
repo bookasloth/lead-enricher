@@ -128,6 +128,10 @@ const allRows   = db.prepare(`SELECT * FROM sources
 const G = initGmaps(db);
 const gmapsRunning = new Set();
 const gmapsStop = new Set();
+// hard concurrency cap — the box OOMs past ~2 parallel scrapers. Enforced HERE
+// (not just in the watchdog) so nothing — watchdog, UI, or a manual /start — can
+// ever exceed it, whatever order they fire in. Override with GMAPS_MAX_CONCURRENT.
+const GMAPS_MAX_CONCURRENT = Math.max(1, Number(process.env.GMAPS_MAX_CONCURRENT) || 2);
 const gScoreCfg = loadScoringConfig();
 
 // ---------- classify + extract ----------
@@ -400,8 +404,10 @@ async function runEnrichment() {
 }
 
 // ---------- google maps job control + routes ----------
+// returns { ok, running?, capped? } — refuses when the cap is already reached
 function startGmapsJob(jobId) {
-  if (gmapsRunning.has(jobId)) return;
+  if (gmapsRunning.has(jobId)) return { ok: true, running: true };
+  if (gmapsRunning.size >= GMAPS_MAX_CONCURRENT) return { ok: false, capped: true };
   gmapsRunning.add(jobId); gmapsStop.delete(jobId);
   runJob(G, jobId, {
     runCell: provider.runCell,
@@ -413,6 +419,7 @@ function startGmapsJob(jobId) {
     G.setJobStatus.run({ id: jobId, status: 'error', completed_at: Date.now() });
     broadcast({ type: 'gmaps_error', job_id: jobId, error: String(e).slice(0, 200) });
   }).finally(() => gmapsRunning.delete(jobId));
+  return { ok: true };
 }
 
 async function handleGmaps(req, res, url) {
@@ -455,13 +462,18 @@ async function handleGmaps(req, res, url) {
     const Q = (queries || []).map(s => String(s).trim()).filter(Boolean);
     if (!A.length || !Q.length) return send(res, 400, 'application/json', JSON.stringify({ error: 'need at least one area and one query' }));
     const jobId = createJob(G, { city: String(city || '').trim(), areas: A, queries: Q, cap: Number(cap) || 60 });
-    startGmapsJob(jobId);
-    return send(res, 200, 'application/json', JSON.stringify({ job_id: jobId, total_cells: A.length * Q.length }));
+    const started = startGmapsJob(jobId);
+    return send(res, 200, 'application/json', JSON.stringify({ job_id: jobId, total_cells: A.length * Q.length,
+      started: started.ok, queued: !started.ok, note: started.ok ? undefined : `max ${GMAPS_MAX_CONCURRENT} jobs running; job queued — start it when one finishes` }));
   }
   if (req.method === 'GET' && p === '/api/gmaps/jobs') {
     return send(res, 200, 'application/json', JSON.stringify({ jobs: G.listJobs.all(), running: [...gmapsRunning] }));
   }
-  if (m && req.method === 'POST' && m[2] === '/start') { startGmapsJob(Number(m[1])); return send(res, 200, 'application/json', JSON.stringify({ running: true })); }
+  if (m && req.method === 'POST' && m[2] === '/start') {
+    const r = startGmapsJob(Number(m[1]));
+    if (!r.ok) return send(res, 409, 'application/json', JSON.stringify({ error: `max ${GMAPS_MAX_CONCURRENT} concurrent jobs already running`, running: [...gmapsRunning] }));
+    return send(res, 200, 'application/json', JSON.stringify({ running: true }));
+  }
   if (m && req.method === 'POST' && m[2] === '/stop')  { gmapsStop.add(Number(m[1])); return send(res, 200, 'application/json', JSON.stringify({ stopping: true })); }
   if (m && req.method === 'GET' && !m[2]) {
     const id = Number(m[1]); const job = G.getJob.get(id);

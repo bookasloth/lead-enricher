@@ -449,7 +449,9 @@ $('#gmStart').onclick=async()=>{
   if(!body.areas.length||!body.queries.length){ toast('add areas + queries'); return; }
   const j=await (await fetch('/api/gmaps/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
   if(j.error){ toast(j.error); return; }
-  gmJob=j.job_id; $('#gmProg').classList.remove('hidden'); $('#s_cells').textContent='0/'+j.total_cells; toast('job '+gmJob+' started');
+  gmJob=j.job_id;
+  if(j.queued){ toast(j.note||'job queued (max jobs running)'); return; }
+  $('#gmProg').classList.remove('hidden'); $('#s_cells').textContent='0/'+j.total_cells; toast('job '+gmJob+' started');
 };
 $('#gmStop').onclick=()=>{ if(gmJob) fetch(`/api/gmaps/jobs/${gmJob}/stop`,{method:'POST'}); };
 function gmAttachLatest(){
