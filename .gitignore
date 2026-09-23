@@ -26,3 +26,8 @@ node_modules/
 watchdog.out
 watchdog.err
 watchdog.stop
+
+# python laya service
+services/laya/.venv/
+__pycache__/
+*.pyc

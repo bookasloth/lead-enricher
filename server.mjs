@@ -19,6 +19,7 @@ import { provider } from './gmaps/provider.mjs';
 import { runJob, createJob, coverageReport } from './gmaps/runner.mjs';
 import { loadScoringConfig } from './gmaps/scoring.mjs';
 import * as gexport from './gmaps/export.mjs';
+import { layaDecide } from './gmaps/laya-client.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -416,6 +417,27 @@ function startGmapsJob(jobId) {
 async function handleGmaps(req, res, url) {
   const p = url.pathname;
   const m = p.match(/^\/api\/gmaps\/jobs\/(\d+)(\/start|\/stop)?$/);
+
+  // Laya typed decision for one lead. Gated: refused while a scrape runs, because
+  // the model (~1.5GB) would fight the scraper for RAM on the 8GB host.
+  const md = p.match(/^\/api\/gmaps\/leads\/(.+)\/decide$/);
+  if (md && req.method === 'POST') {
+    if (gmapsRunning.size > 0) return send(res, 409, 'application/json', JSON.stringify({ error: 'scrape jobs running; run Laya decisions when idle' }));
+    const lead = G.getLead.get(decodeURIComponent(md[1]));
+    if (!lead) return send(res, 404, 'application/json', JSON.stringify({ error: 'no such lead' }));
+    try {
+      const decision = await layaDecide({
+        name: lead.name, category: lead.category, locality: lead.locality,
+        description: lead.description, services: lead.services_json,
+        rating: lead.rating, review_count: lead.review_count,
+        has_website: lead.has_website, has_booking: lead.has_booking,
+      });
+      return send(res, 200, 'application/json', JSON.stringify({ key: lead.key, decision }));
+    } catch (e) {
+      return send(res, 502, 'application/json', JSON.stringify({ error: 'laya service unavailable', detail: String(e.message || e) }));
+    }
+  }
+
   if (req.method === 'POST' && p === '/api/gmaps/jobs') {
     const { city, areas, queries, cap } = JSON.parse((await readBody(req)) || '{}');
     const A = (areas || []).map(s => String(s).trim()).filter(Boolean);

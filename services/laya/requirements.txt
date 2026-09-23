@@ -1,0 +1,5 @@
+# Laya pulls torch + transformers + safetensors + huggingface_hub transitively.
+# torch has NO cp314 wheels yet -> build this venv with Python 3.11 or 3.12.
+laya==0.3.6
+fastapi>=0.110
+uvicorn[standard]>=0.29
