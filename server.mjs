@@ -20,6 +20,7 @@ import { runJob, createJob, coverageReport } from './gmaps/runner.mjs';
 import { loadScoringConfig } from './gmaps/scoring.mjs';
 import * as gexport from './gmaps/export.mjs';
 import { layaDecide } from './gmaps/laya-client.mjs';
+import { gradeLead } from './gmaps/grade.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -436,6 +437,16 @@ async function handleGmaps(req, res, url) {
     } catch (e) {
       return send(res, 502, 'application/json', JSON.stringify({ error: 'laya service unavailable', detail: String(e.message || e) }));
     }
+  }
+
+  // step-3 backfill: (re)grade stored leads. Pure CPU, no scrape/model needed;
+  // safe to run anytime. Optional ?job_id= limits to one job, else all leads.
+  if (req.method === 'POST' && p === '/api/gmaps/grade-all') {
+    const jid = Number(url.searchParams.get('job_id')) || 0;
+    const rows = jid ? G.leadsByJob.all(jid) : G.allLeads.all();
+    let n = 0;
+    for (const row of rows) { G.updateGrade.run({ key: row.key, ...gradeLead(row) }); n++; }
+    return send(res, 200, 'application/json', JSON.stringify({ graded: n, scope: jid ? `job ${jid}` : 'all' }));
   }
 
   if (req.method === 'POST' && p === '/api/gmaps/jobs') {

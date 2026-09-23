@@ -79,6 +79,16 @@ export function initGmaps(db) {
   );`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_gmaps_job ON gmaps_leads(job_id);`);
 
+  // STEP 3 grading columns — additive migration for DBs created before grading
+  // existed. ALTER throws if the column is already there, so each is guarded.
+  for (const [col, type] of [
+    ['grade', 'TEXT'], ['fit_score', 'INTEGER DEFAULT 0'], ['priority', 'TEXT'],
+    ['marketing_eligible', 'TEXT'], ['opportunity', 'TEXT'],
+    ['grade_confidence', 'INTEGER DEFAULT 0'], ['grade_json', "TEXT DEFAULT '{}'"],
+  ]) {
+    try { db.exec(`ALTER TABLE gmaps_leads ADD COLUMN ${col} ${type}`); } catch { /* column exists */ }
+  }
+
   return {
     // jobs
     createJob: db.prepare(`INSERT INTO jobs (source,city,params_json,status,total_cells,started_at)
@@ -118,6 +128,9 @@ export function initGmaps(db) {
       has_website=@has_website, has_phone=@has_phone, has_email=@has_email, has_social=@has_social,
       has_booking=@has_booking, has_whatsapp=@has_whatsapp, enrich_status=@enrich_status WHERE key=@key`),
     updateScore: db.prepare(`UPDATE gmaps_leads SET score=@score, score_reasons_json=@score_reasons_json WHERE key=@key`),
+    updateGrade: db.prepare(`UPDATE gmaps_leads SET grade=@grade, fit_score=@fit_score, priority=@priority,
+      marketing_eligible=@marketing_eligible, opportunity=@opportunity, grade_confidence=@grade_confidence,
+      grade_json=@grade_json WHERE key=@key`),
     leadsByLocality: db.prepare(`SELECT key,name,address FROM gmaps_leads WHERE locality=?`),
     leadsByJob: db.prepare(`SELECT * FROM gmaps_leads WHERE job_id=? ORDER BY score DESC`),
     allLeads: db.prepare(`SELECT * FROM gmaps_leads ORDER BY score DESC`),

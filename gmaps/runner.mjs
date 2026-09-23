@@ -5,6 +5,7 @@
 import { ingestLead } from './dedup.mjs';
 import { enrichWebsite } from './enrich.mjs';
 import { scoreLead, loadScoringConfig } from './scoring.mjs';
+import { gradeLead } from './grade.mjs';
 
 // build the matrix: one `searches` cell per area×query. Returns jobId.
 export function createJob(q, { city, areas, queries, cap = 60 }) {
@@ -64,8 +65,11 @@ export async function runJob(q, jobId, deps) {
         const patch = await enrichWebsite(row, deps.enrichDeps);
         q.updateEnrich.run({ key, ...patch });
       }
-      const scored = scoreLead(q.getLead.get(key), cfg);
+      const fresh = q.getLead.get(key);
+      const scored = scoreLead(fresh, cfg);
       q.updateScore.run({ key, score: scored.score, score_reasons_json: JSON.stringify(scored.reasons) });
+      // step 3: product-fit grade (grade/priority/eligibility) on the same fresh row
+      q.updateGrade.run({ key, ...gradeLead(fresh) });
     }
 
     q.setSearch.run({ id: cell.id, status: 'ok', result_count: leads.length, error: '', ts: Date.now() });
