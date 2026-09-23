@@ -139,11 +139,33 @@
   /* drop zone (backlinks) */
   #drop { padding:34px; border:2px dashed var(--line); border-radius:12px; text-align:center; color:var(--dim); transition:.15s; cursor:pointer; }
   #drop.hot { border-color:var(--accent); color:var(--fg); background:#141b2b; }
-  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--panel); border:1px solid var(--line); padding:10px 16px; border-radius:9px; box-shadow:var(--shadow); z-index:30; opacity:0; transition:.2s; }
-  .toast.on { opacity:1; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(8px); background:var(--panel); border:1px solid var(--line); padding:10px 16px; border-radius:9px; box-shadow:var(--shadow); z-index:30; opacity:0; transition:.22s; }
+  .toast.on { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* top loading bar */
+  #loadbar { position:fixed; top:0; left:0; height:2.5px; width:0; background:linear-gradient(90deg,var(--accent),#8b5bff); z-index:50; opacity:0; transition:width .2s ease,opacity .3s; box-shadow:0 0 8px var(--accent); }
+  #loadbar.on { opacity:1; }
+
+  /* skeleton shimmer */
+  .sk { position:relative; overflow:hidden; background:var(--panel2); border-radius:6px; }
+  .sk::after { content:''; position:absolute; inset:0; transform:translateX(-100%);
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.06),transparent); animation:shimmer 1.3s infinite; }
+  @keyframes shimmer { 100% { transform:translateX(100%); } }
+  .sk-line { height:12px; margin:6px 0; }
+  .sk-card { height:86px; }
+
+  /* motion */
+  .view { animation:fadeup .28s ease both; }
+  @keyframes fadeup { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  tbody tr.in { animation:rowin .3s ease both; }
+  @keyframes rowin { from { opacity:0; transform:translateY(4px); } }
+  .card { transition:transform .15s ease, border-color .15s ease; }
+  .card:hover { transform:translateY(-2px); border-color:var(--dim2); }
+  @media (prefers-reduced-motion:reduce){ *{ animation:none!important; transition:none!important; } }
 </style>
 </head>
 <body>
+<div id="loadbar"></div>
 
 <aside>
   <div class="brand"><span class="logo">◆</span> <span>Leadforge</span></div>
@@ -213,6 +235,7 @@
         <th data-k="review_count">Reviews</th><th>Why</th>
       </tr></thead><tbody id="leadRows"></tbody></table>
     </div>
+    <div id="leadSentinel" style="height:1px"></div>
   </section>
 
   <!-- ============ SCRAPE ============ -->
@@ -313,6 +336,21 @@ const GRADE_ORDER=['A+','A','B','C','D','X'], GRADE_COL={'A+':'--gA1','A':'--gA'
 const PRIO_ORDER=['P1','P2','P3','EXCLUDE'], PRIO_COL={P1:'--p1',P2:'--p2',P3:'--p3',EXCLUDE:'--pex'};
 const cssv = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
+// ---------- top loading bar + fetch wrapper ----------
+let _loads=0;
+function loadStart(){ _loads++; const b=$('#loadbar'); b.classList.add('on'); b.style.width=(15+Math.random()*45)+'%'; }
+function loadEnd(){ _loads=Math.max(0,_loads-1); if(_loads)return; const b=$('#loadbar'); b.style.width='100%'; setTimeout(()=>{ b.classList.remove('on'); b.style.width='0'; },250); }
+async function api(url,opts){ loadStart(); try{ return await (await fetch(url,opts)).json(); } finally{ loadEnd(); } }
+
+// ---------- count-up ----------
+function countUp(el,to){ to=Number(to)||0; const dur=650, t0=performance.now(), from=0;
+  (function step(t){ const k=Math.min(1,(t-t0)/dur); const e=1-Math.pow(1-k,3);
+    el.textContent=Math.round(from+(to-from)*e).toLocaleString(); if(k<1)requestAnimationFrame(step); })(t0); }
+
+// ---------- skeletons ----------
+const skCards = n => Array.from({length:n},()=>`<div class="card"><div class="sk sk-line" style="width:55%;height:26px"></div><div class="sk sk-line" style="width:40%"></div></div>`).join('');
+const skRows = (n,cols) => Array.from({length:n},()=>`<tr>${Array.from({length:cols},(_,i)=>`<td><div class="sk sk-line" style="width:${[40,44,50,80,70,60,72,80,40,40,40,90][i]||60}%"></div></td>`).join('')}</tr>`).join('');
+
 // ---------- routing ----------
 const VIEWS=['dashboard','leads','scrape','backlinks'];
 const TITLES={dashboard:'Dashboard',leads:'Leads',scrape:'Scrape',backlinks:'Backlinks'};
@@ -330,17 +368,20 @@ window.addEventListener('hashchange',route);
 // ---------- dashboard ----------
 let STATS=null;
 async function loadDash(){
-  STATS = await (await fetch('/api/gmaps/stats')).json();
+  const first = !STATS;
+  if(first){ $('#dashCards').innerHTML = skCards(5); $('#jobsRows').innerHTML = skRows(4,8); }
+  STATS = await api('/api/gmaps/stats');
   $('#nav-leads').textContent = STATS.total.toLocaleString();
   const g=STATS.grade||{}, pr=STATS.priority||{}, el=STATS.eligible||{};
   const p1=pr.P1||0, aplus=g['A+']||0, yes=el.YES||0, ex=pr.EXCLUDE||0;
   $('#dashCards').innerHTML = [
-    ['Total leads', STATS.total.toLocaleString(), '', ''],
-    ['P1 — hot', p1.toLocaleString(), `${pct(p1)} of all`, 'accent'],
-    ['A+ graded', aplus.toLocaleString(), pct(aplus), ''],
-    ['Marketing eligible', yes.toLocaleString(), pct(yes), ''],
-    ['Excluded', ex.toLocaleString(), pct(ex), ''],
-  ].map(([l,b,s,cls])=>`<div class="card ${cls}"><div class="stat-b">${b}</div><div class="stat-l">${l}</div><div class="stat-sub dim">${s}</div></div>`).join('');
+    ['Total leads', STATS.total, '', ''],
+    ['P1 — hot', p1, `${pct(p1)} of all`, 'accent'],
+    ['A+ graded', aplus, pct(aplus), ''],
+    ['Marketing eligible', yes, pct(yes), ''],
+    ['Excluded', ex, pct(ex), ''],
+  ].map(([l,b,s,cls])=>`<div class="card ${cls}"><div class="stat-b" data-to="${b}">0</div><div class="stat-l">${l}</div><div class="stat-sub dim">${s}</div></div>`).join('');
+  $$('#dashCards .stat-b').forEach(e=>countUp(e,e.dataset.to));
   renderDist('#gradeDist','#gradeLegend',GRADE_ORDER,GRADE_COL,g);
   renderDist('#prioDist','#prioLegend',PRIO_ORDER,PRIO_COL,pr);
   // jobs
@@ -373,34 +414,58 @@ function renderDist(barSel,legSel,order,colMap,data){
 async function resumeJob(id){ await fetch(`/api/gmaps/jobs/${id}/start`,{method:'POST'}); toast('resumed job '+id); loadDash(); }
 async function stopJob(id){ await fetch(`/api/gmaps/jobs/${id}/stop`,{method:'POST'}); toast('stopping job '+id); }
 
-// ---------- leads ----------
-let leadSort='fit_score', leadDir=-1, leadTimer=0;
-function leadFilters(){ clearTimeout(leadTimer); leadTimer=setTimeout(loadLeads,180); }
-async function loadLeads(){
+// ---------- leads (skeleton + lazy infinite scroll) ----------
+const PAGE=100;
+let leadSort='fit_score', leadDir=-1, leadTimer=0, leadOffset=0, leadTotal=0, leadLoading=false, leadClientSort=false;
+let LEADCACHE={}, LEADROWS=[];
+function leadFilters(){ clearTimeout(leadTimer); leadTimer=setTimeout(()=>loadLeads(true),180); }
+function leadQuery(){
   const p=new URLSearchParams();
   if($('#q').value.trim()) p.set('q',$('#q').value.trim());
   if($('#fGrade').value) p.set('grade',$('#fGrade').value);
   if($('#fPrio').value) p.set('priority',$('#fPrio').value);
   if($('#fJob').value) p.set('job_id',$('#fJob').value);
-  p.set('limit','500');
-  const j = await (await fetch('/api/gmaps/leads?'+p)).json();
-  let rows=j.rows||[];
-  rows.sort((a,b)=>{ const x=a[leadSort]??'',y=b[leadSort]??''; return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*leadDir; });
-  LEADCACHE={}; rows.forEach(r=>LEADCACHE[r.key]=r);
-  $('#leadCount').textContent = `${rows.length} shown · ${j.total.toLocaleString()} match`;
-  $('#leadRows').innerHTML = rows.map(r=>{
-    let why=''; try{ why=(JSON.parse(r.grade_json||'{}').reasons||[]).slice(0,2).join(' · '); }catch{}
-    return `<tr onclick="openLead('${esc(r.key).replace(/'/g,"\\'")}')">
-      <td>${gradeBadge(r.grade)}</td><td>${prioBadge(r.priority)}</td><td>${scoreCell(r.fit_score)}</td>
-      <td><span class="name">${link(r.maps_url,esc(r.name))||esc(r.name)}</span></td>
-      <td>${esc(r.category)}</td><td>${esc(r.locality)}</td>
-      <td>${copyable(r.phone)}</td><td>${copyable(r.email)}</td><td>${link(r.website,'site')}</td>
-      <td>${r.rating||''}</td><td>${r.review_count||0}</td><td class="why">${esc(why)}</td></tr>`;
-  }).join('') || '<tr><td colspan="12" class="dim" style="padding:20px">No leads match.</td></tr>';
+  return p;
 }
-let LEADCACHE={};
+function leadRowHtml(r){
+  let why=''; try{ why=(JSON.parse(r.grade_json||'{}').reasons||[]).slice(0,2).join(' · '); }catch{}
+  return `<tr class="in" onclick="openLead('${esc(r.key).replace(/'/g,"\\'")}')">
+    <td>${gradeBadge(r.grade)}</td><td>${prioBadge(r.priority)}</td><td>${scoreCell(r.fit_score)}</td>
+    <td><span class="name">${link(r.maps_url,esc(r.name))||esc(r.name)}</span></td>
+    <td>${esc(r.category)}</td><td>${esc(r.locality)}</td>
+    <td>${copyable(r.phone)}</td><td>${copyable(r.email)}</td><td>${link(r.website,'site')}</td>
+    <td>${r.rating||''}</td><td>${r.review_count||0}</td><td class="why">${esc(why)}</td></tr>`;
+}
+async function loadLeads(reset=true){
+  if(leadLoading) return;
+  if(reset){ leadOffset=0; leadTotal=0; LEADROWS=[]; LEADCACHE={}; leadClientSort=false; $('#leadRows').innerHTML=skRows(10,12); }
+  else if(leadOffset>=leadTotal) return;
+  leadLoading=true;
+  const p=leadQuery(); p.set('limit',PAGE); p.set('offset',leadOffset);
+  const j=await api('/api/gmaps/leads?'+p);
+  leadTotal=j.total; const rows=j.rows||[]; leadOffset+=rows.length;
+  rows.forEach(r=>{ LEADCACHE[r.key]=r; LEADROWS.push(r); });
+  if(reset){
+    $('#leadRows').innerHTML = LEADROWS.length ? LEADROWS.map(leadRowHtml).join('') : '<tr><td colspan="12" class="dim" style="padding:20px">No leads match.</td></tr>';
+  } else {
+    $('#leadRows').insertAdjacentHTML('beforeend', rows.map(leadRowHtml).join('')); // append, keep scroll
+  }
+  $('#leadCount').textContent = `${LEADROWS.length} shown · ${leadTotal.toLocaleString()} match`;
+  leadLoading=false;
+}
+// infinite scroll: an IntersectionObserver on a sentinel below the table fires the
+// next page as it scrolls into view (robust across scroll containers + user/programmatic).
+new IntersectionObserver((entries)=>{
+  if(entries[0].isIntersecting && !$('#v-leads').classList.contains('hidden') && !leadClientSort) loadLeads(false);
+},{ root:$('main'), rootMargin:'0px 0px 500px 0px' }).observe($('#leadSentinel'));
 ['#q','#fGrade','#fPrio','#fJob'].forEach(s=>$(s).addEventListener('input',leadFilters));
-$$('#leadTbl th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(leadSort===k)leadDir*=-1; else{leadSort=k;leadDir=(k==='name'||k==='category'||k==='locality')?1:-1;} loadLeads(); });
+// clicking a column sorts the ALREADY-loaded set (disables lazy append to keep order stable)
+$$('#leadTbl th[data-k]').forEach(th=>th.onclick=()=>{
+  const k=th.dataset.k; if(leadSort===k)leadDir*=-1; else{leadSort=k;leadDir=(k==='name'||k==='category'||k==='locality')?1:-1;}
+  leadClientSort=true;
+  LEADROWS.sort((a,b)=>{ const x=a[k]??'',y=b[k]??''; return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*leadDir; });
+  $('#leadRows').innerHTML=LEADROWS.map(leadRowHtml).join('');
+});
 
 // ---------- lead drawer ----------
 function openLead(key){
