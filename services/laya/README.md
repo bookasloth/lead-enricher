@@ -33,7 +33,8 @@ Questions live in [`decisions/crm.py`](decisions/crm.py) — the one place to tu
 - **Quality**: laya's base checkpoints score **near-chance zero-shot** on typed
   decisions (their README: 0.36). Treat outputs as a *weak signal* until the
   model is fine-tuned on labelled leads. This MVP is the plumbing, not tuned quality.
-- `torch` has **no Python 3.14 wheels** — build the venv with **3.11 or 3.12**.
+- **Python**: verified on **3.14** (torch 2.14.0 cp314 wheels); 3.11/3.12 also work.
+  `run.ps1` auto-picks the first available.
 
 ## Run
 
@@ -46,7 +47,7 @@ Or manually:
 
 ```powershell
 cd services\laya
-py -3.12 -m venv .venv
+py -3.14 -m venv .venv   # or 3.12 / 3.11
 .\.venv\Scripts\python -m pip install -r requirements.txt
 .\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8077
 ```
