@@ -152,6 +152,32 @@ export function initGmaps(db) {
     leadsByJob: db.prepare(`SELECT * FROM gmaps_leads WHERE job_id=? ORDER BY score DESC`),
     allLeads: db.prepare(`SELECT * FROM gmaps_leads ORDER BY score DESC`),
 
+    // ---- home → cloud sync (upserts; online owns CRM fields, so those are preserved) ----
+    syncUpsertJob: db.prepare(`INSERT OR REPLACE INTO jobs
+      (id,source,city,params_json,status,total_cells,done_cells,raw_results,unique_leads,duplicates,errors,started_at,completed_at)
+      VALUES (@id,@source,@city,@params_json,@status,@total_cells,@done_cells,@raw_results,@unique_leads,@duplicates,@errors,@started_at,@completed_at)`),
+    syncUpsertLead: db.prepare(`INSERT INTO gmaps_leads
+      (key,job_id,name,maps_url,place_id,cid,address,locality,lat,lng,phone,website,category,rating,review_count,
+       hours_json,description,services_json,doctor_name,socials_json,email,booking_link,whatsapp,branch_count,
+       areas_json,queries_json,found_count,first_seen,last_seen,has_website,has_phone,has_email,has_social,has_booking,
+       has_whatsapp,score,score_reasons_json,enrich_status,status,note,ts,grade,fit_score,priority,marketing_eligible,
+       opportunity,grade_confidence,grade_json,outreach_status,notes,contacted_at)
+      VALUES (@key,@job_id,@name,@maps_url,@place_id,@cid,@address,@locality,@lat,@lng,@phone,@website,@category,@rating,
+       @review_count,@hours_json,@description,@services_json,@doctor_name,@socials_json,@email,@booking_link,@whatsapp,
+       @branch_count,@areas_json,@queries_json,@found_count,@first_seen,@last_seen,@has_website,@has_phone,@has_email,
+       @has_social,@has_booking,@has_whatsapp,@score,@score_reasons_json,@enrich_status,@status,@note,@ts,@grade,
+       @fit_score,@priority,@marketing_eligible,@opportunity,@grade_confidence,@grade_json,@outreach_status,@notes,@contacted_at)
+      ON CONFLICT(key) DO UPDATE SET
+       job_id=@job_id,name=@name,maps_url=@maps_url,place_id=@place_id,cid=@cid,address=@address,locality=@locality,
+       lat=@lat,lng=@lng,phone=@phone,website=@website,category=@category,rating=@rating,review_count=@review_count,
+       hours_json=@hours_json,description=@description,services_json=@services_json,doctor_name=@doctor_name,
+       socials_json=@socials_json,email=@email,booking_link=@booking_link,whatsapp=@whatsapp,branch_count=@branch_count,
+       areas_json=@areas_json,queries_json=@queries_json,found_count=@found_count,last_seen=@last_seen,
+       has_website=@has_website,has_phone=@has_phone,has_email=@has_email,has_social=@has_social,has_booking=@has_booking,
+       has_whatsapp=@has_whatsapp,score=@score,score_reasons_json=@score_reasons_json,enrich_status=@enrich_status,
+       status=@status,note=@note,ts=@ts,grade=@grade,fit_score=@fit_score,priority=@priority,
+       marketing_eligible=@marketing_eligible,opportunity=@opportunity,grade_confidence=@grade_confidence,grade_json=@grade_json`),
+
     // schedules
     createSchedule: db.prepare(`INSERT INTO schedules (name,city,params_json,interval_h,enabled,next_run_at,created_at)
       VALUES (@name,@city,@params_json,@interval_h,1,@next_run_at,@created_at)`),

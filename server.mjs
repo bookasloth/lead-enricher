@@ -12,6 +12,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { parseCSV, renderAdminHTML } from './admin-template.mjs';
 import { initGmaps } from './gmaps/db.mjs';
@@ -26,8 +27,12 @@ import { enrichWebsite } from './gmaps/enrich.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------- config ----------
-const PORT        = 5178;
-const DB_FILE     = path.join(__dirname, 'leads.db');
+const PORT        = Number(process.env.PORT) || 5178;
+const DB_FILE     = process.env.DB_FILE || path.join(__dirname, 'leads.db');
+// online deploy: password gate for the UI + bearer token for the home→cloud sync.
+// Both unset in local dev = wide open, unchanged. Set on Render to lock it down.
+const APP_PASSWORD = process.env.APP_PASSWORD || '';
+const SYNC_TOKEN   = process.env.SYNC_TOKEN || '';
 const CONCURRENCY = 30;          // balanced
 const REQ_DELAY   = 150;         // ms jitter between a worker's requests (politeness)
 const TIMEOUT_MS  = 12000;
@@ -621,6 +626,33 @@ function readBody(req) {
 }
 const send = (res, code, type, body) => { res.writeHead(code, { 'Content-Type': type }); res.end(body); };
 
+// ---------- auth (only active when APP_PASSWORD / SYNC_TOKEN set — local dev stays open) ----------
+const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const AUTH_COOKIE = APP_PASSWORD ? sha('sl:' + APP_PASSWORD) : '';
+function isAuthed(req) {
+  if (!APP_PASSWORD) return true;
+  const cookie = req.headers.cookie || '';
+  const m = cookie.match(/(?:^|;\s*)sl_auth=([a-f0-9]{64})/);
+  return !!m && m[1] === AUTH_COOKIE;
+}
+function bearerOk(req) {
+  if (!SYNC_TOKEN) return false;
+  const h = req.headers.authorization || '';
+  return h === 'Bearer ' + SYNC_TOKEN;
+}
+const loginPage = (err) => `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Leadforge — sign in</title><style>
+:root{--bg:#0e0f0d;--card:#1a1c18;--txt:#ececdf;--dim:#8a8a7e;--accent:#5b8f6f;--line:#2a2d26}
+*{box-sizing:border-box}body{font:15px system-ui,sans-serif;background:var(--bg);color:var(--txt);display:grid;place-items:center;min-height:100vh;margin:0}
+form{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:32px;width:min(340px,90vw);display:flex;flex-direction:column;gap:14px}
+h1{margin:0 0 4px;font-size:20px}p{margin:0;color:var(--dim);font-size:13px}
+input{background:#0e0f0d;border:1px solid var(--line);border-radius:8px;padding:11px 13px;color:var(--txt);font-size:15px}
+button{background:var(--accent);border:0;border-radius:8px;padding:11px;color:#fff;font-weight:600;font-size:15px;cursor:pointer}
+.err{color:#e08a8a;font-size:13px;${err ? '' : 'display:none'}}</style>
+<form method=POST action=/api/login><h1>Leadforge</h1><p>Enter password to continue.</p>
+<input type=password name=password placeholder=Password autofocus required>
+<div class=err>Wrong password.</div><button>Sign in</button></form>`;
+
 function listsIndex(LISTS) {
   let items = [];
   try {
@@ -647,6 +679,38 @@ li{margin:6px 0}h1{font-size:18px}@media(prefers-color-scheme:dark){body{backgro
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   try {
+    // ---- login (open routes) ----
+    if (req.method === 'GET' && url.pathname === '/login') {
+      if (isAuthed(req)) { res.writeHead(302, { Location: '/' }); return res.end(); }
+      return send(res, 200, 'text/html; charset=utf-8', loginPage(false));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/login') {
+      const body = new URLSearchParams(await readBody(req));
+      if (APP_PASSWORD && sha('sl:' + (body.get('password') || '')) === AUTH_COOKIE) {
+        res.writeHead(302, { 'Set-Cookie': `sl_auth=${AUTH_COOKIE}; HttpOnly; Path=/; Max-Age=2592000; SameSite=Lax`, Location: '/' });
+        return res.end();
+      }
+      return send(res, 200, 'text/html; charset=utf-8', loginPage(true));
+    }
+    // ---- home → cloud lead sync (bearer-guarded, bypasses cookie gate) ----
+    if (req.method === 'POST' && url.pathname === '/api/sync/leads') {
+      if (!bearerOk(req)) return send(res, 401, 'application/json', JSON.stringify({ error: 'bad token' }));
+      const { leads = [], jobs = [] } = JSON.parse((await readBody(req)) || '{}');
+      let up = 0;
+      const tx = db.prepare('BEGIN'); tx.run();
+      try {
+        for (const j of jobs) G.syncUpsertJob.run(j);
+        for (const l of leads) { G.syncUpsertLead.run(l); up++; }
+        db.prepare('COMMIT').run();
+      } catch (e) { db.prepare('ROLLBACK').run(); throw e; }
+      return send(res, 200, 'application/json', JSON.stringify({ ok: true, upserted: up, jobs: jobs.length }));
+    }
+    // ---- cookie gate: everything below needs auth when APP_PASSWORD is set ----
+    if (!isAuthed(req)) {
+      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/login'))
+        return send(res, 200, 'text/html; charset=utf-8', loginPage(false));
+      return send(res, 401, 'application/json', JSON.stringify({ error: 'auth required' }));
+    }
     if (req.method === 'GET' && url.pathname === '/') {
       return send(res, 200, 'text/html; charset=utf-8', fs.readFileSync(path.join(__dirname, 'public', 'index.html')));
     }

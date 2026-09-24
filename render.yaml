@@ -1,0 +1,27 @@
+# Render blueprint — deploy the Leadforge app (browse/CRM/export) to the cloud.
+# Scraping stays on your home box (residential IP); it pushes leads up via sync.mjs.
+#
+# Deploy: Render dashboard → New → Blueprint → pick this repo. It reads this file.
+# Then set APP_PASSWORD in the dashboard (SYNC_TOKEN is auto-generated — copy it
+# into your home machine's sync.config.json).
+services:
+  - type: web
+    name: leadforge
+    runtime: node
+    plan: starter          # 'starter' = persistent disk survives redeploys. 'free' works but disk is ephemeral (see DEPLOY.md).
+    buildCommand: npm install
+    startCommand: node server.mjs
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DB_FILE
+        value: /data/leads.db
+      - key: APP_PASSWORD
+        sync: false          # set this yourself in the Render dashboard
+      - key: SYNC_TOKEN
+        generateValue: true  # Render generates it; copy into home sync.config.json
+    disk:
+      name: leadforge-data
+      mountPath: /data
+      sizeGB: 1
