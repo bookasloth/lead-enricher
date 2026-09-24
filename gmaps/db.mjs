@@ -111,6 +111,37 @@ export function initGmaps(db) {
     created_at  INTEGER
   )`);
 
+  // cold-email outreach send log — one row per attempted send (idempotency + daily cap + ramp)
+  db.exec(`CREATE TABLE IF NOT EXISTS outreach_sends (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    key     TEXT,            -- gmaps_leads.key
+    email   TEXT,
+    subject TEXT,
+    status  TEXT,            -- sent | error | dry_run
+    error   TEXT,
+    ts      INTEGER
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_outreach_ts ON outreach_sends(ts)`);
+
+  // schema-driven sync upsert: columns come from the live table, so adding a
+  // gmaps_leads column never breaks home→cloud sync again. Online owns CRM fields.
+  const LEAD_COLS = db.prepare(`PRAGMA table_info(gmaps_leads)`).all().map(r => r.name);
+  const CRM_OWNED = new Set(['outreach_status', 'notes', 'contacted_at']);
+  const _upsertCache = new Map();
+  function syncUpsertLeadRun(lead) {
+    const cols = LEAD_COLS.filter(c => Object.prototype.hasOwnProperty.call(lead, c));
+    const sig = cols.join(',');
+    let stmt = _upsertCache.get(sig);
+    if (!stmt) {
+      const setCols = cols.filter(c => c !== 'key' && !CRM_OWNED.has(c)).map(c => `${c}=@${c}`).join(',');
+      stmt = db.prepare(`INSERT INTO gmaps_leads (${cols.join(',')}) VALUES (${cols.map(c => '@' + c).join(',')})
+        ON CONFLICT(key) DO UPDATE SET ${setCols}`);
+      _upsertCache.set(sig, stmt);
+    }
+    const bind = {}; for (const c of cols) bind[c] = lead[c]; // trim extras node:sqlite would reject
+    stmt.run(bind);
+  }
+
   return {
     // jobs
     createJob: db.prepare(`INSERT INTO jobs (source,city,params_json,status,total_cells,started_at)
@@ -160,6 +191,15 @@ export function initGmaps(db) {
     updateWebKind: db.prepare(`UPDATE gmaps_leads SET
       web_kind=@web_kind, web_platform=@web_platform, web_group=@web_group WHERE key=@key`),
     updateTwPitch: db.prepare(`UPDATE gmaps_leads SET tw_pitch=@tw_pitch WHERE key=@key`),
+
+    // outreach: emailable, not-yet-contacted leads (has-website SEO/GEO pitch), best first
+    outreachCandidates: db.prepare(`SELECT * FROM gmaps_leads
+      WHERE email!='' AND web_kind='own' AND (outreach_status IS NULL OR outreach_status='new')
+      ORDER BY tw_score DESC LIMIT @limit`),
+    logSend: db.prepare(`INSERT INTO outreach_sends (key,email,subject,status,error,ts)
+      VALUES (@key,@email,@subject,@status,@error,@ts)`),
+    sentSince: db.prepare(`SELECT COUNT(*) n FROM outreach_sends WHERE status='sent' AND ts>=@since`),
+    firstSendTs: db.prepare(`SELECT MIN(ts) t FROM outreach_sends WHERE status='sent'`),
     updateTwGrade: db.prepare(`UPDATE gmaps_leads SET
       tw_score=@tw_score, tw_grade=@tw_grade, tw_priority=@tw_priority,
       tw_gap_json=@tw_gap_json, tw_pitch=@tw_pitch WHERE key=@key`),

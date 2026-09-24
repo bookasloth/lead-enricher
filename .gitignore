@@ -19,6 +19,7 @@ node_modules/
 !gmaps-scoring.json
 !timewheel-scoring.json
 !timewheel-verticals.json
+!outreach.config.json
 !gmaps/fixtures/
 !gmaps/fixtures/*.json
 
