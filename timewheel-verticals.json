@@ -1,0 +1,19 @@
+{
+  "city": "Nagpur",
+  "areas": ["Dharampeth", "Sadar", "Sitabuldi", "Ramdaspeth", "Civil Lines",
+    "Manish Nagar", "Pratap Nagar", "Wardha Road", "Bajaj Nagar", "Laxmi Nagar"],
+  "verticals": {
+    "restaurants": ["restaurant", "cafe", "cloud kitchen"],
+    "fitness": ["gym", "fitness studio", "yoga studio"],
+    "real_estate": ["real estate agent", "property dealer", "builder"],
+    "hotels": ["hotel", "banquet hall", "resort"],
+    "salons_spas": ["salon", "spa", "beauty parlour"],
+    "clinics": ["clinic", "dental clinic", "diagnostic centre"],
+    "coaching": ["coaching classes", "training institute"],
+    "events": ["wedding planner", "event management", "photographer"],
+    "interiors": ["interior designer", "architect"],
+    "auto": ["car dealer", "car service centre"],
+    "jewellers": ["jeweller", "jewellery showroom"],
+    "retail": ["boutique", "furniture store", "electronics store"]
+  }
+}

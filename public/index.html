@@ -183,6 +183,7 @@
     <h2 id="viewTitle">Dashboard</h2>
     <div class="spacer"></div>
     <button class="ghost" id="regradeBtn" title="Re-grade all stored leads">Re-grade all</button>
+    <button class="ghost hidden" id="regradeTwBtn" title="Re-grade all leads for Timewheel">Regrade Timewheel</button>
     <button class="ghost" id="exportBtn">Export CSV</button>
   </div>
 
@@ -221,20 +222,17 @@
   <!-- ============ LEADS ============ -->
   <section class="view hidden" id="v-leads">
     <div class="filters">
+      <select id="fProduct"><option value="sloth" selected>Book A Sloth</option><option value="timewheel">Timewheel</option></select>
       <input type="search" id="q" placeholder="search name / category / phone…">
       <select id="fGrade"><option value="">All grades</option><option>A+</option><option>A</option><option>B</option><option>C</option><option>D</option><option>X</option></select>
       <select id="fPrio"><option value="">All priorities</option><option>P1</option><option>P2</option><option>P3</option><option>EXCLUDE</option></select>
       <select id="fOut"><option value="">Any status</option><option>new</option><option>contacted</option><option>replied</option><option>won</option><option>lost</option></select>
+      <select id="fGap" class="hidden"><option value="">All gaps</option><option value="no_website">No website</option><option value="ai_crawlers_blocked">AI crawlers blocked</option><option value="no_schema">No schema</option><option value="not_mobile">Not mobile</option><option value="weak_seo">Weak SEO</option><option value="no_social">No social</option></select>
       <select id="fJob"><option value="">All jobs</option></select>
       <span class="count" id="leadCount"></span>
     </div>
     <div class="panel tbl-wrap">
-      <table id="leadTbl"><thead><tr>
-        <th data-k="grade">Grade</th><th data-k="priority">Priority</th><th data-k="fit_score">Fit</th>
-        <th data-k="name">Name</th><th data-k="category">Category</th><th data-k="locality">Locality</th>
-        <th data-k="phone">Phone</th><th data-k="email">Email</th><th>Site</th><th data-k="rating">Rating</th>
-        <th data-k="review_count">Reviews</th><th>Why</th>
-      </tr></thead><tbody id="leadRows"></tbody></table>
+      <table id="leadTbl"><thead><tr></tr></thead><tbody id="leadRows"></tbody></table>
     </div>
     <div id="leadSentinel" style="height:1px"></div>
   </section>
@@ -469,19 +467,34 @@ async function stopJob(id){ await fetch(`/api/gmaps/jobs/${id}/stop`,{method:'PO
 
 // ---------- leads (skeleton + lazy infinite scroll) ----------
 const PAGE=100;
+let PRODUCT='sloth'; // ponytail: two known products, hardcoded branch beats a plugin registry for now
 let leadSort='fit_score', leadDir=-1, leadTimer=0, leadOffset=0, leadTotal=0, leadLoading=false, leadClientSort=false;
 let LEADCACHE={}, LEADROWS=[];
 function leadFilters(){ clearTimeout(leadTimer); leadTimer=setTimeout(()=>loadLeads(true),180); }
 function leadQuery(){
   const p=new URLSearchParams();
   if($('#q').value.trim()) p.set('q',$('#q').value.trim());
-  if($('#fGrade').value) p.set('grade',$('#fGrade').value);
-  if($('#fPrio').value) p.set('priority',$('#fPrio').value);
-  if($('#fOut').value) p.set('outreach',$('#fOut').value);
+  if(PRODUCT==='timewheel'){
+    if($('#fGrade').value) p.set('tw_grade',$('#fGrade').value);
+    if($('#fPrio').value) p.set('tw_priority',$('#fPrio').value);
+    if($('#fGap').value) p.set('gap',$('#fGap').value);
+  } else {
+    if($('#fGrade').value) p.set('grade',$('#fGrade').value);
+    if($('#fPrio').value) p.set('priority',$('#fPrio').value);
+    if($('#fOut').value) p.set('outreach',$('#fOut').value);
+  }
   if($('#fJob').value) p.set('job_id',$('#fJob').value);
   return p;
 }
+const LEAD_COLS = 12, TW_COLS = 7;
 function leadRowHtml(r){
+  if(PRODUCT==='timewheel'){
+    let gaps=''; try{ gaps=(JSON.parse(r.tw_gap_json||'[]')||[]).join(', '); }catch{}
+    return `<tr class="in" onclick="openLead('${esc(r.key).replace(/'/g,"\\'")}')">
+      <td>${gradeBadge(r.tw_grade)}</td><td>${prioBadge(r.tw_priority)}</td><td>${scoreCell(r.tw_score)}</td>
+      <td><span class="name">${statusDot(r.outreach_status)}${link(r.maps_url,esc(r.name))||esc(r.name)}</span></td>
+      <td>${copyable(r.phone)}</td><td class="why">${esc(r.tw_pitch||'')}</td><td class="why">${esc(gaps)}</td></tr>`;
+  }
   let why=''; try{ why=(JSON.parse(r.grade_json||'{}').reasons||[]).slice(0,2).join(' · '); }catch{}
   return `<tr class="in" onclick="openLead('${esc(r.key).replace(/'/g,"\\'")}')">
     <td>${gradeBadge(r.grade)}</td><td>${prioBadge(r.priority)}</td><td>${scoreCell(r.fit_score)}</td>
@@ -490,17 +503,34 @@ function leadRowHtml(r){
     <td>${copyable(r.phone)}</td><td>${copyable(r.email)}</td><td>${link(r.website,'site')}</td>
     <td>${r.rating||''}</td><td>${r.review_count||0}</td><td class="why">${esc(why)}</td></tr>`;
 }
+function renderLeadHead(){
+  $('#leadTbl thead tr').innerHTML = PRODUCT==='timewheel'
+    ? `<th data-k="tw_grade">Grade</th><th data-k="tw_priority">Priority</th><th data-k="tw_score">Score</th>
+       <th data-k="name">Name</th><th data-k="phone">Phone</th><th>Pitch</th><th>Gaps</th>`
+    : `<th data-k="grade">Grade</th><th data-k="priority">Priority</th><th data-k="fit_score">Fit</th>
+       <th data-k="name">Name</th><th data-k="category">Category</th><th data-k="locality">Locality</th>
+       <th data-k="phone">Phone</th><th data-k="email">Email</th><th>Site</th><th data-k="rating">Rating</th>
+       <th data-k="review_count">Reviews</th><th>Why</th>`;
+  // clicking a column sorts the ALREADY-loaded set (disables lazy append to keep order stable)
+  $$('#leadTbl th[data-k]').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; if(leadSort===k)leadDir*=-1; else{leadSort=k;leadDir=(k==='name'||k==='category'||k==='locality')?1:-1;}
+    leadClientSort=true;
+    LEADROWS.sort((a,b)=>{ const x=a[k]??'',y=b[k]??''; return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*leadDir; });
+    $('#leadRows').innerHTML=LEADROWS.map(leadRowHtml).join('');
+  });
+}
 async function loadLeads(reset=true){
   if(leadLoading) return;
-  if(reset){ leadOffset=0; leadTotal=0; LEADROWS=[]; LEADCACHE={}; leadClientSort=false; $('#leadRows').innerHTML=skRows(10,12); }
+  const cols = PRODUCT==='timewheel'?TW_COLS:LEAD_COLS;
+  if(reset){ leadOffset=0; leadTotal=0; LEADROWS=[]; LEADCACHE={}; leadClientSort=false; $('#leadRows').innerHTML=skRows(10,cols); }
   else if(leadOffset>=leadTotal) return;
   leadLoading=true;
   const p=leadQuery(); p.set('limit',PAGE); p.set('offset',leadOffset);
-  const j=await api('/api/gmaps/leads?'+p);
+  const j=await api('/api/gmaps/'+(PRODUCT==='timewheel'?'tw-leads':'leads')+'?'+p);
   leadTotal=j.total; const rows=j.rows||[]; leadOffset+=rows.length;
   rows.forEach(r=>{ LEADCACHE[r.key]=r; LEADROWS.push(r); });
   if(reset){
-    $('#leadRows').innerHTML = LEADROWS.length ? LEADROWS.map(leadRowHtml).join('') : '<tr><td colspan="12" class="dim" style="padding:20px">No leads match.</td></tr>';
+    $('#leadRows').innerHTML = LEADROWS.length ? LEADROWS.map(leadRowHtml).join('') : `<tr><td colspan="${cols}" class="dim" style="padding:20px">No leads match.</td></tr>`;
   } else {
     $('#leadRows').insertAdjacentHTML('beforeend', rows.map(leadRowHtml).join('')); // append, keep scroll
   }
@@ -512,14 +542,16 @@ async function loadLeads(reset=true){
 new IntersectionObserver((entries)=>{
   if(entries[0].isIntersecting && !$('#v-leads').classList.contains('hidden') && !leadClientSort) loadLeads(false);
 },{ root:$('main'), rootMargin:'0px 0px 500px 0px' }).observe($('#leadSentinel'));
-['#q','#fGrade','#fPrio','#fOut','#fJob'].forEach(s=>$(s).addEventListener('input',leadFilters));
-// clicking a column sorts the ALREADY-loaded set (disables lazy append to keep order stable)
-$$('#leadTbl th[data-k]').forEach(th=>th.onclick=()=>{
-  const k=th.dataset.k; if(leadSort===k)leadDir*=-1; else{leadSort=k;leadDir=(k==='name'||k==='category'||k==='locality')?1:-1;}
-  leadClientSort=true;
-  LEADROWS.sort((a,b)=>{ const x=a[k]??'',y=b[k]??''; return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*leadDir; });
-  $('#leadRows').innerHTML=LEADROWS.map(leadRowHtml).join('');
+['#q','#fGrade','#fPrio','#fOut','#fGap','#fJob'].forEach(s=>$(s).addEventListener('input',leadFilters));
+$('#fProduct').addEventListener('change',()=>{
+  PRODUCT=$('#fProduct').value; const isTw=PRODUCT==='timewheel';
+  $('#fGap').classList.toggle('hidden',!isTw);
+  $('#fOut').classList.toggle('hidden',isTw);
+  $('#regradeTwBtn').classList.toggle('hidden',!isTw);
+  leadSort=isTw?'tw_score':'fit_score'; leadDir=-1;
+  renderLeadHead(); loadLeads(true);
 });
+renderLeadHead();
 
 // ---------- lead drawer ----------
 function openLead(key){
@@ -662,9 +694,11 @@ es.onmessage=ev=>{ let m; try{m=JSON.parse(ev.data);}catch{return;}
 function setLive(on){ $('#liveDot').classList.toggle('on',on); $('#liveTxt').textContent=on?'scraping…':'idle'; }
 
 // ---------- topbar actions ----------
-$('#exportBtn').onclick=()=>{ const p=leadQuery(); location.href='/api/gmaps/export.csv'+(p.toString()?'?'+p:''); };
+$('#exportBtn').onclick=()=>{ const p=leadQuery(); const ep=PRODUCT==='timewheel'?'/api/gmaps/tw-export.csv':'/api/gmaps/export.csv'; location.href=ep+(p.toString()?'?'+p:''); };
 $('#regradeBtn').onclick=async()=>{ if(!confirm('Re-grade all stored leads?'))return; $('#regradeBtn').disabled=true; $('#regradeBtn').textContent='Grading…';
   const j=await (await fetch('/api/gmaps/grade-all',{method:'POST'})).json(); toast(`graded ${j.graded}`); $('#regradeBtn').disabled=false; $('#regradeBtn').textContent='Re-grade all'; loadDash(); };
+$('#regradeTwBtn').onclick=async()=>{ if(!confirm('Regrade all leads for Timewheel?'))return; $('#regradeTwBtn').disabled=true; $('#regradeTwBtn').textContent='Grading…';
+  const j=await (await fetch('/api/gmaps/tw-regrade-all',{method:'POST'})).json(); toast(`audited ${j.audited}, graded ${j.graded}, deep ${j.deep}`); $('#regradeTwBtn').disabled=false; $('#regradeTwBtn').textContent='Regrade Timewheel'; loadLeads(true); };
 
 // ---------- backlinks (Semrush) ----------
 let BL=[]; const blByKey=new Map(); let blSort='score',blDir=-1;

@@ -23,6 +23,8 @@ import * as gexport from './gmaps/export.mjs';
 import { layaDecide } from './gmaps/laya-client.mjs';
 import { gradeLead } from './gmaps/grade.mjs';
 import { enrichWebsite } from './gmaps/enrich.mjs';
+import { fetchText as sharedFetchText, fetchStatus as sharedFetchStatus } from './gmaps/fetch.mjs';
+import { regradeAll } from './gmaps/regrade-timewheel.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -291,28 +293,8 @@ function extract(html, domain) {
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-async function fetchText(url) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, redirect: 'follow',
-      headers: { 'User-Agent': UA, 'Accept': 'text/html' } });
-    const ct = res.headers.get('content-type') || '';
-    if (!res.ok || !ct.includes('text/html')) return null;
-    const reader = res.body?.getReader();
-    if (!reader) return await res.text();
-    let received = 0, html = ''; const dec = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.length;
-      html += dec.decode(value, { stream: true });
-      if (received > MAX_HTML) { ctrl.abort(); break; }
-    }
-    return html;
-  } catch { return null; }
-  finally { clearTimeout(timer); }
-}
+const fetchText = (url, opts = {}) => sharedFetchText(url, { timeoutMs: TIMEOUT_MS, ua: UA, maxHtml: MAX_HTML, ...opts });
+const fetchStatus = (url) => sharedFetchStatus(url, { timeoutMs: TIMEOUT_MS, ua: UA });
 
 async function enrich(row) {
   const now = Date.now();
@@ -417,7 +399,7 @@ function startGmapsJob(jobId) {
   gmapsRunning.add(jobId); gmapsStop.delete(jobId);
   runJob(G, jobId, {
     runCell: provider.runCell,
-    enrichDeps: { fetchText, extract },
+    enrichDeps: { fetchText, extract, fetchStatus },
     cfg: gScoreCfg,
     broadcast,
     shouldStop: () => gmapsStop.has(jobId),
@@ -475,6 +457,11 @@ async function handleGmaps(req, res, url) {
     let n = 0;
     for (const row of rows) { G.updateGrade.run({ key: row.key, ...gradeLead(row) }); n++; }
     return send(res, 200, 'application/json', JSON.stringify({ graded: n, scope: jid ? `job ${jid}` : 'all' }));
+  }
+
+  if (req.method === 'POST' && p === '/api/gmaps/tw-regrade-all') {
+    const out = await regradeAll(G, { fetchText, fetchStatus });
+    return send(res, 200, 'application/json', JSON.stringify(out));
   }
 
   if (req.method === 'POST' && p === '/api/gmaps/jobs') {
@@ -557,6 +544,39 @@ async function handleGmaps(req, res, url) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${fname}.json"` });
     return res.end(gexport.toJSON(rows, raw));
+  }
+  if (req.method === 'GET' && p === '/api/gmaps/tw-leads') {
+    const args = {}; const where = [];
+    const jid = Number(url.searchParams.get('job_id')) || 0;
+    if (jid) { where.push('job_id=@jid'); args.jid = jid; }
+    const g = url.searchParams.get('tw_grade'); if (g) { where.push('tw_grade=@g'); args.g = g; }
+    const pr = url.searchParams.get('tw_priority'); if (pr) { where.push('tw_priority=@pr'); args.pr = pr; }
+    const gap = url.searchParams.get('gap'); if (gap) { where.push('tw_gap_json LIKE @gap'); args.gap = '%"' + gap + '"%'; }
+    const qs = (url.searchParams.get('q') || '').trim();
+    if (qs) { where.push('(name LIKE @q OR category LIKE @q OR locality LIKE @q)'); args.q = '%' + qs + '%'; }
+    const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const limit = Math.min(2000, Number(url.searchParams.get('limit')) || 500);
+    const offset = Number(url.searchParams.get('offset')) || 0;
+    const rows = db.prepare(`SELECT * FROM gmaps_leads ${w} ORDER BY tw_score DESC LIMIT @limit OFFSET @offset`).all({ ...args, limit, offset });
+    const total = db.prepare(`SELECT COUNT(*) n FROM gmaps_leads ${w}`).get(args).n;
+    return send(res, 200, 'application/json', JSON.stringify({ rows, total }));
+  }
+  if (req.method === 'GET' && (p === '/api/gmaps/tw-export.csv' || p === '/api/gmaps/tw-export.json')) {
+    const raw = url.searchParams.get('raw') === '1';
+    const args = {}; const where = [];
+    const g = url.searchParams.get('tw_grade'); if (g) { where.push('tw_grade=@g'); args.g = g; }
+    const pr = url.searchParams.get('tw_priority'); if (pr) { where.push('tw_priority=@pr'); args.pr = pr; }
+    const gap = url.searchParams.get('gap'); if (gap) { where.push('tw_gap_json LIKE @gap'); args.gap = '%"' + gap + '"%'; }
+    const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const rows = db.prepare(`SELECT * FROM gmaps_leads ${w} ORDER BY tw_score DESC`).all(args);
+    const tag = [g, pr, gap].filter(Boolean).join('-') || 'all';
+    const fname = `timewheel-leads-${tag}`;
+    if (p.endsWith('.csv')) {
+      res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="${fname}.csv"` });
+      return res.end(gexport.toCSV(rows, raw, 'timewheel'));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${fname}.json"` });
+    return res.end(gexport.toJSON(rows, raw, 'timewheel'));
   }
   // ---------- contact enrichment: re-enrich leads missing email ----------
   if (req.method === 'POST' && p === '/api/gmaps/enrich') {

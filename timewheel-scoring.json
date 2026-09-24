@@ -1,0 +1,13 @@
+{
+  "weights": {
+    "business_value": 30,
+    "web_gap": 18,
+    "mobile_seo_gap": 14,
+    "geo_aeo_gap": 18,
+    "social_gap": 8,
+    "contactability": 10
+  },
+  "reviewCap": 500,
+  "ratingMinReviews": 10,
+  "grades": { "A": 72, "B": 56, "C": 40 }
+}

@@ -38,3 +38,13 @@ test('toJSON emits sales objects', () => {
   assert.equal(arr[0].name, 'Sharma Dental');
   assert.equal(arr[0].place_id, undefined);
 });
+
+test('timewheel export includes tw fields + gaps', () => {
+  const twLead = { name: 'Sharma Dental', tw_grade: 'A', tw_priority: 'P1', tw_score: 80,
+    tw_pitch: 'No website.', tw_gap_json: '["no_website","no_schema"]',
+    audit_json: '{"web":{"platform":"none"}}', phone: '911', category: 'Dentist' };
+  const csv = toCSV([twLead], false, 'timewheel');
+  assert.match(csv, /tw_grade/);
+  assert.match(csv, /Sharma Dental/);
+  assert.match(csv, /no_website; no_schema/);
+});
