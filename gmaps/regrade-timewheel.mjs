@@ -9,12 +9,24 @@ export async function regradeAll(q, deps) {
   const cfg = deps.cfg || loadTwConfig();
   const deepGrades = deps.deepGrades || ['A', 'B'];
   const force = deps.force || false; // re-grade rows already done (default: resume/skip them)
+  const concurrency = Math.max(1, deps.concurrency || 10);
   const rows = q.allLeads.all();
-  let audited = 0, graded = 0, deep = 0, skipped = 0, errored = 0;
+  // resume: rows already tw-graded are done — process only the rest so re-runs progress
+  const pending = force ? rows : rows.filter(r => r.tw_grade == null);
+  let audited = 0, graded = 0, deep = 0, errored = 0;
+  const skipped = rows.length - pending.length;
 
-  for (const row of rows) {
-    // resume: a row already tw-graded is done — skip so re-runs make forward progress
-    if (!force && row.tw_grade != null) { skipped++; continue; }
+  // worker pool: audits are network-bound, so run `concurrency` leads at once.
+  // DatabaseSync writes are synchronous (JS single-threaded) so counters/writes don't race.
+  let idx = 0;
+  async function worker() {
+    while (idx < pending.length) {
+      const row = pending[idx++];
+      await processLead(row);
+    }
+  }
+
+  async function processLead(row) {
     try {
       const a = await auditSite(row, deps);
       q.updateAudit.run({ key: row.key, audit_json: a.audit_json, psi_json: row.psi_json || '{}',
@@ -44,6 +56,8 @@ export async function regradeAll(q, deps) {
       errored++;
     }
   }
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
   return { audited, graded, deep, skipped, errored };
 }
 

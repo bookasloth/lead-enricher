@@ -32,3 +32,26 @@ test('regradeAll audits + grades every lead; no-website rich => A', async () => 
   assert.equal(row.audit_status, 'skipped'); // no website
   assert.ok(JSON.parse(row.tw_gap_json).includes('no_website'));
 });
+
+test('concurrency pool grades all pending; resume skips already-graded', async () => {
+  const q = freshDb();
+  const now = Date.now();
+  const base = { job_id: 1, maps_url: '', place_id: '', cid: '', address: '', locality: '',
+    lat: null, lng: null, category: '', hours_json: '{}', description: '', services_json: '[]',
+    doctor_name: '', socials_json: '{}', email: '', booking_link: '', whatsapp: '',
+    branch_count: 1, areas_json: '{}', queries_json: '{}', found_count: 1,
+    first_seen: now, last_seen: now, ts: now, website: '', rating: 4.5, review_count: 200 };
+  for (const k of ['a', 'b', 'c', 'd', 'e']) {
+    q.insertLead.run({ ...base, key: k, name: 'Biz ' + k, phone: '911', place_id: 'p_' + k });
+    q.updateEnrich.run({ key: k, email: '', socials_json: '{}', booking_link: '', whatsapp: '',
+      has_website: 'NO', has_phone: 'YES', has_email: 'UNKNOWN', has_social: 'NO',
+      has_booking: 'UNKNOWN', has_whatsapp: 'UNKNOWN', enrich_status: 'skipped' });
+  }
+  const deps = { fetchText: async () => null, fetchStatus: async () => 0, concurrency: 3 };
+  const out1 = await regradeAll(q, deps);
+  assert.equal(out1.graded, 5);      // all five processed by the pool
+  assert.equal(out1.skipped, 0);
+  const out2 = await regradeAll(q, deps);
+  assert.equal(out2.graded, 0);      // resume: all already graded
+  assert.equal(out2.skipped, 5);
+});
