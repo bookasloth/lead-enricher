@@ -10,6 +10,7 @@ export const SALES_COLS = ['grade', 'priority', 'marketing_eligible', 'fit_score
 export const RAW_COLS = ['place_id', 'cid', 'lat', 'lng', 'hours_json', 'services_json', 'socials_json',
   'areas_json', 'queries_json', 'job_id', 'enrich_status', 'status', 'first_seen', 'last_seen'];
 export const TW_SALES_COLS = ['tw_grade', 'tw_priority', 'tw_score', 'tw_pitch', 'tw_gaps',
+  'web_kind', 'web_platform', 'web_group',
   'name', 'category', 'locality', 'address', 'phone', 'whatsapp', 'email', 'website',
   'rating', 'review_count', 'has_website', 'has_social', 'audit_summary', 'maps_url'];
 

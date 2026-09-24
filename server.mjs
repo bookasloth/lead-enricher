@@ -552,6 +552,9 @@ async function handleGmaps(req, res, url) {
     const g = url.searchParams.get('tw_grade'); if (g) { where.push('tw_grade=@g'); args.g = g; }
     const pr = url.searchParams.get('tw_priority'); if (pr) { where.push('tw_priority=@pr'); args.pr = pr; }
     const gap = url.searchParams.get('gap'); if (gap) { where.push('tw_gap_json LIKE @gap'); args.gap = '%"' + gap + '"%'; }
+    const wk = url.searchParams.get('web_kind'); if (wk) { where.push('web_kind=@wk'); args.wk = wk; }
+    const wg = url.searchParams.get('web_group'); if (wg) { where.push('web_group=@wg'); args.wg = wg; }
+    const wp = url.searchParams.get('web_platform'); if (wp) { where.push('web_platform=@wp'); args.wp = wp; }
     const qs = (url.searchParams.get('q') || '').trim();
     if (qs) { where.push('(name LIKE @q OR category LIKE @q OR locality LIKE @q)'); args.q = '%' + qs + '%'; }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
@@ -567,9 +570,12 @@ async function handleGmaps(req, res, url) {
     const g = url.searchParams.get('tw_grade'); if (g) { where.push('tw_grade=@g'); args.g = g; }
     const pr = url.searchParams.get('tw_priority'); if (pr) { where.push('tw_priority=@pr'); args.pr = pr; }
     const gap = url.searchParams.get('gap'); if (gap) { where.push('tw_gap_json LIKE @gap'); args.gap = '%"' + gap + '"%'; }
+    const wk = url.searchParams.get('web_kind'); if (wk) { where.push('web_kind=@wk'); args.wk = wk; }
+    const wg = url.searchParams.get('web_group'); if (wg) { where.push('web_group=@wg'); args.wg = wg; }
+    const wp = url.searchParams.get('web_platform'); if (wp) { where.push('web_platform=@wp'); args.wp = wp; }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const rows = db.prepare(`SELECT * FROM gmaps_leads ${w} ORDER BY tw_score DESC`).all(args);
-    const tag = [g, pr, gap].filter(Boolean).join('-') || 'all';
+    const tag = [g, pr, gap, wk, wg, wp].filter(Boolean).join('-') || 'all';
     const fname = `timewheel-leads-${tag}`;
     if (p.endsWith('.csv')) {
       res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="${fname}.csv"` });

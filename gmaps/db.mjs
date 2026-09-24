@@ -159,6 +159,7 @@ export function initGmaps(db) {
       audit_json=@audit_json, psi_json=@psi_json, geo_json=@geo_json, audit_status=@audit_status WHERE key=@key`),
     updateWebKind: db.prepare(`UPDATE gmaps_leads SET
       web_kind=@web_kind, web_platform=@web_platform, web_group=@web_group WHERE key=@key`),
+    updateTwPitch: db.prepare(`UPDATE gmaps_leads SET tw_pitch=@tw_pitch WHERE key=@key`),
     updateTwGrade: db.prepare(`UPDATE gmaps_leads SET
       tw_score=@tw_score, tw_grade=@tw_grade, tw_priority=@tw_priority,
       tw_gap_json=@tw_gap_json, tw_pitch=@tw_pitch WHERE key=@key`),

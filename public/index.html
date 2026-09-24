@@ -228,6 +228,8 @@
       <select id="fPrio"><option value="">All priorities</option><option>P1</option><option>P2</option><option>P3</option><option>EXCLUDE</option></select>
       <select id="fOut"><option value="">Any status</option><option>new</option><option>contacted</option><option>replied</option><option>won</option><option>lost</option></select>
       <select id="fGap" class="hidden"><option value="">All gaps</option><option value="no_website">No website</option><option value="ai_crawlers_blocked">AI crawlers blocked</option><option value="no_schema">No schema</option><option value="not_mobile">Not mobile</option><option value="weak_seo">Weak SEO</option><option value="no_social">No social</option></select>
+      <select id="fWebKind" class="hidden"><option value="">Any web</option><option value="none">No website</option><option value="free_site">Free/social site</option><option value="own">Own website</option></select>
+      <select id="fWebGroup" class="hidden"><option value="">Any platform</option><option value="social">Social only</option><option value="free_builder">Free builder</option><option value="directory">Directory listing</option></select>
       <select id="fJob"><option value="">All jobs</option></select>
       <span class="count" id="leadCount"></span>
     </div>
@@ -478,6 +480,8 @@ function leadQuery(){
     if($('#fGrade').value) p.set('tw_grade',$('#fGrade').value);
     if($('#fPrio').value) p.set('tw_priority',$('#fPrio').value);
     if($('#fGap').value) p.set('gap',$('#fGap').value);
+    if($('#fWebKind').value) p.set('web_kind',$('#fWebKind').value);
+    if($('#fWebGroup').value) p.set('web_group',$('#fWebGroup').value);
   } else {
     if($('#fGrade').value) p.set('grade',$('#fGrade').value);
     if($('#fPrio').value) p.set('priority',$('#fPrio').value);
@@ -542,10 +546,12 @@ async function loadLeads(reset=true){
 new IntersectionObserver((entries)=>{
   if(entries[0].isIntersecting && !$('#v-leads').classList.contains('hidden') && !leadClientSort) loadLeads(false);
 },{ root:$('main'), rootMargin:'0px 0px 500px 0px' }).observe($('#leadSentinel'));
-['#q','#fGrade','#fPrio','#fOut','#fGap','#fJob'].forEach(s=>$(s).addEventListener('input',leadFilters));
+['#q','#fGrade','#fPrio','#fOut','#fGap','#fWebKind','#fWebGroup','#fJob'].forEach(s=>$(s).addEventListener('input',leadFilters));
 $('#fProduct').addEventListener('change',()=>{
   PRODUCT=$('#fProduct').value; const isTw=PRODUCT==='timewheel';
   $('#fGap').classList.toggle('hidden',!isTw);
+  $('#fWebKind').classList.toggle('hidden',!isTw);
+  $('#fWebGroup').classList.toggle('hidden',!isTw);
   $('#fOut').classList.toggle('hidden',isTw);
   $('#regradeTwBtn').classList.toggle('hidden',!isTw);
   leadSort=isTw?'tw_score':'fit_score'; leadDir=-1;

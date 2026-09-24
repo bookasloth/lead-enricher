@@ -1,6 +1,19 @@
 // gmaps/pitch.mjs — deterministic pitch one-liner (composePitch, used by the grader)
 // + a Claude-API email seam (draftEmail). No network in composePitch. draftEmail
 // returns a stub until ANTHROPIC_API_KEY is wired.
+import { classifyWeb } from './web-kind.mjs';
+
+// How to name a free_site stand-in in the pitch (falls back to the raw platform label).
+const PLATFORM_PHRASE = {
+  instagram: 'Instagram', facebook: 'Facebook', twitter_x: 'X/Twitter', youtube: 'YouTube',
+  whatsapp: 'WhatsApp', linktree: 'a Linktree', telegram: 'Telegram',
+  google_sites: 'a free Google Sites page', google_business_site: 'a free Google business page',
+  wix: 'a free Wix page', wordpress_com: 'a free WordPress.com page', blogspot: 'a Blogspot page',
+  weebly: 'a free Weebly page', godaddy: 'a GoDaddy builder page', duda: 'a builder page',
+  justdial: 'a JustDial listing', practo: 'a Practo listing', sulekha: 'a Sulekha listing',
+  indiamart: 'an IndiaMART listing', zomato: 'a Zomato listing', swiggy: 'a Swiggy listing',
+  tripadvisor: 'a TripAdvisor listing', urbanpro: 'an UrbanPro listing',
+};
 
 const GAP_PHRASES = {
   no_website: 'no website',
@@ -20,14 +33,26 @@ const AI_GAPS = new Set(['no_schema', 'ai_crawlers_blocked', 'no_llms_txt', 'no_
 
 // Pure. Leads with the biggest proof-of-value (reviews) get the punchiest opener.
 export function composePitch(lead, gaps) {
-  if (!gaps || !gaps.length) return '';
+  const gapList = gaps || [];
   const rc = Number(lead.review_count) || 0;
   const rating = Number(lead.rating) || 0;
   const value = rc >= 25
     ? `${rc} reviews${rating ? `, ${rating}★` : ''}`
     : 'An established local business';
-  const phrases = gaps.map(g => GAP_PHRASES[g]).filter(Boolean).slice(0, 3);
-  const aiInvisible = gaps.some(g => AI_GAPS.has(g) || g === 'no_website');
+
+  // free_site: the business only has a social/builder/directory stand-in, not a
+  // real owned website. Lead the pitch with WHERE they are so it's tailored.
+  const cls = classifyWeb(lead.website);
+  if (cls.kind === 'free_site') {
+    const where = PLATFORM_PHRASE[cls.platform] || cls.platform;
+    const extra = gapList.map(g => GAP_PHRASES[g]).filter(Boolean).slice(0, 2);
+    const extraStr = extra.length ? ` (also ${extra.join(', ')})` : '';
+    return `${value} — but only on ${where}, no real website${extraStr}. Losing customers who Google you.`.trim();
+  }
+
+  if (!gapList.length) return '';
+  const phrases = gapList.map(g => GAP_PHRASES[g]).filter(Boolean).slice(0, 3);
+  const aiInvisible = gapList.some(g => AI_GAPS.has(g) || g === 'no_website');
   const tail = aiInvisible ? ' Invisible on Google and ChatGPT.' : '';
   return `${value} — but ${phrases.join(', ')}.${tail}`.trim();
 }
