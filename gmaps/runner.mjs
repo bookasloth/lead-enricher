@@ -6,6 +6,8 @@ import { ingestLead } from './dedup.mjs';
 import { enrichWebsite } from './enrich.mjs';
 import { scoreLead, loadScoringConfig } from './scoring.mjs';
 import { gradeLead } from './grade.mjs';
+import { auditSite } from './audit.mjs';
+import { gradeTimewheel, loadTwConfig } from './grade-timewheel.mjs';
 
 // build the matrix: one `searches` cell per area×query. Returns jobId.
 export function createJob(q, { city, areas, queries, cap = 60 }) {
@@ -21,13 +23,15 @@ export function createJob(q, { city, areas, queries, cap = 60 }) {
   return jobId;
 }
 
-// run (or resume) a job. deps: { runCell, enrichDeps:{fetchText,extract}, cfg?, broadcast?, shouldStop? }
+// run (or resume) a job. deps: { runCell, enrichDeps:{fetchText,extract,fetchStatus?}, cfg?, twCfg?, broadcast?, shouldStop? }
 export async function runJob(q, jobId, deps) {
   const job = q.getJob.get(jobId);
   if (!job) throw new Error('no such job');
   const cap = JSON.parse(job.params_json || '{}').cap || 60;
   const city = job.city || '';
   const cfg = deps.cfg || loadScoringConfig();
+  const twCfg = deps.twCfg || loadTwConfig();
+  const auditDeps = { fetchText: deps.enrichDeps.fetchText, fetchStatus: deps.enrichDeps.fetchStatus || (async () => 0) };
   const broadcast = deps.broadcast || (() => {});
   const shouldStop = deps.shouldStop || (() => false);
 
@@ -70,6 +74,13 @@ export async function runJob(q, jobId, deps) {
       q.updateScore.run({ key, score: scored.score, score_reasons_json: JSON.stringify(scored.reasons) });
       // step 3: product-fit grade (grade/priority/eligibility) on the same fresh row
       q.updateGrade.run({ key, ...gradeLead(fresh) });
+      // Timewheel parallel track: audit + digital-gap grade
+      const twRow = q.getLead.get(key);
+      const a = await auditSite(twRow, auditDeps);
+      q.updateAudit.run({ key, audit_json: a.audit_json, psi_json: twRow.psi_json || '{}',
+        geo_json: a.geo_json, audit_status: a.audit_status });
+      let auditObj = {}; try { auditObj = JSON.parse(a.audit_json); } catch {}
+      q.updateTwGrade.run({ key, ...gradeTimewheel(twRow, auditObj, twCfg) });
     }
 
     q.setSearch.run({ id: cell.id, status: 'ok', result_count: leads.length, error: '', ts: Date.now() });

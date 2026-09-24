@@ -64,6 +64,21 @@ test('matrix job: dedup, counters, enrich, score, coverage', async () => {
   assert.equal(cov.total_searches, 4);
 });
 
+test('runJob populates tw_grade for scraped leads', async () => {
+  const d = q();
+  const jobId = createJob(d, { city: 'Nagpur', areas: ['Dharampeth'], queries: ['dentist'], cap: 10 });
+  const deps = {
+    runCell: async () => ([{ key: 'x1', name: 'Rich Dental', phone: '911', website: '', rating: 4.7,
+      review_count: 300, place_id: 'x1', maps_url: 'https://maps/x1' }]),
+    enrichDeps: { fetchText: async () => null, extract: () => ({ emails: [], phones: [], socials: {} }),
+      fetchStatus: async () => 0 },
+  };
+  await runJob(d, jobId, deps);
+  const rows = d.allLeads.all();
+  assert.ok(rows.length >= 1);
+  assert.ok(rows[0].tw_grade, 'tw_grade should be set');
+});
+
 test('resume: already-done cells are skipped, provider not re-called for them', async () => {
   const d = q();
   const jobId = createJob(d, { city: 'Nagpur', areas: ['Dharampeth', 'Sadar'], queries: ['Dentist'], cap: 60 });
