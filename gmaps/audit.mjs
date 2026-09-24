@@ -96,7 +96,7 @@ export async function auditSite(lead, deps) {
   }
   const a = auditHtml(html, site);
   if (origin) {
-    const robots = await deps.fetchText(origin + '/robots.txt');
+    const robots = await deps.fetchText(origin + '/robots.txt', { anyType: true });
     a.geo.ai_crawlers_blocked = robotsBlocksAI(robots);
     a.geo.no_llms_txt = (await deps.fetchStatus(origin + '/llms.txt')) !== 200;
     a.geo.no_sitemap = (await deps.fetchStatus(origin + '/sitemap.xml')) !== 200;

@@ -293,7 +293,7 @@ function extract(html, domain) {
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const fetchText = (url) => sharedFetchText(url, { timeoutMs: TIMEOUT_MS, ua: UA, maxHtml: MAX_HTML });
+const fetchText = (url, opts = {}) => sharedFetchText(url, { timeoutMs: TIMEOUT_MS, ua: UA, maxHtml: MAX_HTML, ...opts });
 const fetchStatus = (url) => sharedFetchStatus(url, { timeoutMs: TIMEOUT_MS, ua: UA });
 
 async function enrich(row) {
@@ -399,7 +399,7 @@ function startGmapsJob(jobId) {
   gmapsRunning.add(jobId); gmapsStop.delete(jobId);
   runJob(G, jobId, {
     runCell: provider.runCell,
-    enrichDeps: { fetchText, extract },
+    enrichDeps: { fetchText, extract, fetchStatus },
     cfg: gScoreCfg,
     broadcast,
     shouldStop: () => gmapsStop.has(jobId),

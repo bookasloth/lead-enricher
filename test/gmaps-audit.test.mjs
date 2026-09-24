@@ -57,3 +57,29 @@ test('auditSite: robots blocking GPTBot => ai_crawlers_blocked true', async () =
   assert.equal(g.no_llms_txt, true);
   assert.equal(g.no_sitemap, false);
 });
+
+test('auditSite: fetchStatus 200 for llms.txt+sitemap => no fabricated gaps', async () => {
+  const deps = {
+    fetchText: async (u) => u.endsWith('robots.txt') ? '' : GOOD,
+    fetchStatus: async () => 200,
+  };
+  const r = await auditSite({ website: 'https://sharmadental.in' }, deps);
+  const g = JSON.parse(r.geo_json);
+  assert.equal(g.no_llms_txt, false);
+  assert.equal(g.no_sitemap, false);
+});
+
+test('auditSite: robots.txt delivered via relaxed fetch => ai_crawlers_blocked true', async () => {
+  const robots = 'User-agent: GPTBot\nDisallow: /';
+  const deps = {
+    // mimics real fetchText: only returns body when anyType is passed (robots.txt is text/plain)
+    fetchText: async (u, opts) => {
+      if (u.endsWith('robots.txt')) return opts && opts.anyType ? robots : null;
+      return GOOD;
+    },
+    fetchStatus: async () => 200,
+  };
+  const r = await auditSite({ website: 'https://sharmadental.in' }, deps);
+  const g = JSON.parse(r.geo_json);
+  assert.equal(g.ai_crawlers_blocked, true);
+});

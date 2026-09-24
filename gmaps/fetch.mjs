@@ -6,14 +6,14 @@ const DEF = { timeoutMs: 12000, ua: 'Mozilla/5.0 (compatible; LeadBot/1.0)',
   maxHtml: 2_000_000, accept: 'text/html' };
 
 export async function fetchText(url, opts = {}) {
-  const { timeoutMs, ua, maxHtml, accept } = { ...DEF, ...opts };
+  const { timeoutMs, ua, maxHtml, accept, anyType } = { ...DEF, ...opts };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: ctrl.signal, redirect: 'follow',
       headers: { 'User-Agent': ua, 'Accept': accept } });
     const ct = res.headers.get('content-type') || '';
-    if (!res.ok || !ct.includes('text/html')) return null;
+    if (!res.ok || (!anyType && !ct.includes('text/html'))) return null;
     const reader = res.body?.getReader();
     if (!reader) return await res.text();
     let received = 0, html = ''; const dec = new TextDecoder();
