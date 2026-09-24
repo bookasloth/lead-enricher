@@ -17,6 +17,8 @@ node_modules/
 
 # keep source config + test fixtures (override *.json above); these are code, not data
 !gmaps-scoring.json
+!timewheel-scoring.json
+!timewheel-verticals.json
 !gmaps/fixtures/
 !gmaps/fixtures/*.json
 

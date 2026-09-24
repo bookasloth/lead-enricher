@@ -296,6 +296,39 @@ Tests use in-memory SQLite (`:memory:`) and fixture gosom output — **no Docker
 
 ---
 
+## Timewheel Internet track
+
+A second, parallel scoring track for **Timewheel Internet** (web/SEO/AEO/GEO/social agency) that runs alongside the existing Book A Sloth score — same leads, same `leads.db`, additive `tw_*` columns. It never touches `grade.mjs` or the original score.
+
+**What it scores** — the *digital gap*: does the business have a website at all, is it dead/unreachable, does it have SSL, is it mobile-friendly, thin/weak on-page SEO, missing schema markup, AI crawlers blocked (`robots.txt`), no answer-shaped content (AEO), no `llms.txt`/sitemap (GEO), and no social presence. Cheap checks (site fetch + HTML parse) run on every lead; a deeper GEO pass (citability + brand-mention search) runs only on A/B-graded leads to keep it fast.
+
+**Backfill existing leads** — after pulling this branch, regrade everything already in `leads.db`:
+
+```bash
+node gmaps/regrade-timewheel.mjs
+```
+
+Prints `Timewheel regrade: { audited, graded, deep }` when done. Safe to re-run; it's a pure recompute over existing rows, no new scraping.
+
+**Scrape new verticals** — `timewheel-verticals.json` has the Nagpur City × Area × Vertical query set (restaurants, fitness, real estate, hotels, salons/spas, clinics, coaching, events, interiors, auto, jewellers, retail). Feed it to the existing job endpoint the same way as any Google Maps job:
+
+```bash
+curl -X POST http://localhost:PORT/api/gmaps/jobs -H "Content-Type: application/json" -d @timewheel-verticals.json
+```
+
+The runner auto-populates the `tw_*` columns (score, grade, priority, gap list, pitch) for every lead it discovers — no separate step needed.
+
+**Dashboard** — the product dropdown (`#fProduct`) toggles the whole leads view between Book A Sloth and Timewheel: switching to `timewheel` swaps the table columns to the `tw_*` fields and the gap filter, without affecting the other product's data.
+
+**Export** — `GET /api/gmaps/tw-export.csv` exports the Timewheel view (same query params as the regular `/api/gmaps/export.csv`); the dashboard's Export button follows whichever product is selected.
+
+**Later seams (documented, not wired to a live call yet):**
+- `ANTHROPIC_API_KEY` — enables `draftEmail` in `gmaps/pitch.mjs` to generate a live outreach email from `tw_pitch`; without it, `draftEmail` returns a stub.
+- `SEARCH_API_KEY` — enables `brandMentions` in `gmaps/geo-deep.mjs` to run a real citation/mention search; without it, it returns `{ status: 'skipped', note: 'no SEARCH_API_KEY' }`.
+- `PSI_API_KEY` — gates a PageSpeed Insights call for A-grade leads (stored in the existing `psi_json` column); not called until this key is set.
+
+---
+
 ## Legal & etiquette
 
 - Uses the OSS `gosom/google-maps-scraper`, which drives a real headless browser over **public** Google Maps pages. It does **not** bypass CAPTCHAs, logins, or paywalls, and this app won't scrape `maps.google.com` directly.
