@@ -10,7 +10,8 @@ const COLS = ['key','job_id','name','maps_url','place_id','cid','address','local
   'booking_link','whatsapp','branch_count','areas_json','queries_json','found_count','first_seen','last_seen',
   'has_website','has_phone','has_email','has_social','has_booking','has_whatsapp','score','score_reasons_json',
   'enrich_status','status','note','ts','grade','fit_score','priority','marketing_eligible','opportunity',
-  'grade_confidence','grade_json','outreach_status','notes','contacted_at'];
+  'grade_confidence','grade_json','outreach_status','notes','contacted_at',
+  'audit_json','psi_json','geo_json','audit_status','tw_score','tw_grade','tw_priority','tw_gap_json','tw_pitch'];
 const row = (over = {}) => { const o = {}; for (const c of COLS) o[c] = null; o.key = 'k1'; o.branch_count = 1; o.found_count = 1; return { ...o, ...over }; };
 
 test('sync preserves online CRM fields but updates scrape data', () => {

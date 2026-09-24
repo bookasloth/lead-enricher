@@ -87,6 +87,11 @@ export function initGmaps(db) {
     ['grade_confidence', 'INTEGER DEFAULT 0'], ['grade_json', "TEXT DEFAULT '{}'"],
     // outreach workflow (CRM-lite): pipeline state + notes per lead
     ['outreach_status', "TEXT DEFAULT 'new'"], ['notes', 'TEXT'], ['contacted_at', 'INTEGER'],
+    // timewheel audit/grading (home audits, cloud consumes for pitch generation)
+    ['audit_json', "TEXT DEFAULT '{}'"], ['psi_json', "TEXT DEFAULT '{}'"],
+    ['geo_json', "TEXT DEFAULT '{}'"], ['audit_status', "TEXT DEFAULT 'pending'"],
+    ['tw_score', 'INTEGER DEFAULT 0'], ['tw_grade', 'TEXT'], ['tw_priority', 'TEXT'],
+    ['tw_gap_json', "TEXT DEFAULT '[]'"], ['tw_pitch', 'TEXT'],
   ]) {
     try { db.exec(`ALTER TABLE gmaps_leads ADD COLUMN ${col} ${type}`); } catch { /* column exists */ }
   }
@@ -148,6 +153,11 @@ export function initGmaps(db) {
       grade_json=@grade_json WHERE key=@key`),
     updateOutreach: db.prepare(`UPDATE gmaps_leads SET outreach_status=@outreach_status, notes=@notes,
       contacted_at=@contacted_at WHERE key=@key`),
+    updateAudit: db.prepare(`UPDATE gmaps_leads SET
+      audit_json=@audit_json, psi_json=@psi_json, geo_json=@geo_json, audit_status=@audit_status WHERE key=@key`),
+    updateTwGrade: db.prepare(`UPDATE gmaps_leads SET
+      tw_score=@tw_score, tw_grade=@tw_grade, tw_priority=@tw_priority,
+      tw_gap_json=@tw_gap_json, tw_pitch=@tw_pitch WHERE key=@key`),
     leadsByLocality: db.prepare(`SELECT key,name,address FROM gmaps_leads WHERE locality=?`),
     leadsByJob: db.prepare(`SELECT * FROM gmaps_leads WHERE job_id=? ORDER BY score DESC`),
     allLeads: db.prepare(`SELECT * FROM gmaps_leads ORDER BY score DESC`),
@@ -161,12 +171,14 @@ export function initGmaps(db) {
        hours_json,description,services_json,doctor_name,socials_json,email,booking_link,whatsapp,branch_count,
        areas_json,queries_json,found_count,first_seen,last_seen,has_website,has_phone,has_email,has_social,has_booking,
        has_whatsapp,score,score_reasons_json,enrich_status,status,note,ts,grade,fit_score,priority,marketing_eligible,
-       opportunity,grade_confidence,grade_json,outreach_status,notes,contacted_at)
+       opportunity,grade_confidence,grade_json,outreach_status,notes,contacted_at,
+       audit_json,psi_json,geo_json,audit_status,tw_score,tw_grade,tw_priority,tw_gap_json,tw_pitch)
       VALUES (@key,@job_id,@name,@maps_url,@place_id,@cid,@address,@locality,@lat,@lng,@phone,@website,@category,@rating,
        @review_count,@hours_json,@description,@services_json,@doctor_name,@socials_json,@email,@booking_link,@whatsapp,
        @branch_count,@areas_json,@queries_json,@found_count,@first_seen,@last_seen,@has_website,@has_phone,@has_email,
        @has_social,@has_booking,@has_whatsapp,@score,@score_reasons_json,@enrich_status,@status,@note,@ts,@grade,
-       @fit_score,@priority,@marketing_eligible,@opportunity,@grade_confidence,@grade_json,@outreach_status,@notes,@contacted_at)
+       @fit_score,@priority,@marketing_eligible,@opportunity,@grade_confidence,@grade_json,@outreach_status,@notes,@contacted_at,
+       @audit_json,@psi_json,@geo_json,@audit_status,@tw_score,@tw_grade,@tw_priority,@tw_gap_json,@tw_pitch)
       ON CONFLICT(key) DO UPDATE SET
        job_id=@job_id,name=@name,maps_url=@maps_url,place_id=@place_id,cid=@cid,address=@address,locality=@locality,
        lat=@lat,lng=@lng,phone=@phone,website=@website,category=@category,rating=@rating,review_count=@review_count,
@@ -176,7 +188,9 @@ export function initGmaps(db) {
        has_website=@has_website,has_phone=@has_phone,has_email=@has_email,has_social=@has_social,has_booking=@has_booking,
        has_whatsapp=@has_whatsapp,score=@score,score_reasons_json=@score_reasons_json,enrich_status=@enrich_status,
        status=@status,note=@note,ts=@ts,grade=@grade,fit_score=@fit_score,priority=@priority,
-       marketing_eligible=@marketing_eligible,opportunity=@opportunity,grade_confidence=@grade_confidence,grade_json=@grade_json`),
+       marketing_eligible=@marketing_eligible,opportunity=@opportunity,grade_confidence=@grade_confidence,grade_json=@grade_json,
+       audit_json=@audit_json,psi_json=@psi_json,geo_json=@geo_json,audit_status=@audit_status,tw_score=@tw_score,
+       tw_grade=@tw_grade,tw_priority=@tw_priority,tw_gap_json=@tw_gap_json,tw_pitch=@tw_pitch`),
 
     // schedules
     createSchedule: db.prepare(`INSERT INTO schedules (name,city,params_json,interval_h,enabled,next_run_at,created_at)

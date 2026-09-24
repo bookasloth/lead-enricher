@@ -34,3 +34,22 @@ test('schema inits and job/search/lead round-trip', () => {
   assert.equal(q.getLeadBy.get({ v: 'PLACE1', phone: 'nope', website: 'nope' }).key, 'PLACE1');
   assert.equal(q.getLeadBy.get({ v: 'nope', phone: '919999999999', website: 'nope' }).key, 'PLACE1');
 });
+
+test('tw columns + statements exist and round-trip', () => {
+  const q = freshDb();
+  const now = Date.now();
+  q.insertLead.run({ key: 'k1', job_id: 1, name: 'X', maps_url: '', place_id: 'p', cid: '',
+    address: '', locality: '', lat: null, lng: null, phone: '', website: '', category: '',
+    rating: null, review_count: 0, hours_json: '{}', description: '', services_json: '[]',
+    doctor_name: '', socials_json: '{}', email: '', booking_link: '', whatsapp: '',
+    branch_count: 1, areas_json: '{}', queries_json: '{}', found_count: 1,
+    first_seen: now, last_seen: now, ts: now });
+  q.updateAudit.run({ key: 'k1', audit_json: '{"web":{}}', psi_json: '{}', geo_json: '{}', audit_status: 'ok' });
+  q.updateTwGrade.run({ key: 'k1', tw_score: 77, tw_grade: 'A', tw_priority: 'P1',
+    tw_gap_json: '["no_website"]', tw_pitch: 'No website.' });
+  const row = q.getLead.get('k1');
+  assert.equal(row.audit_status, 'ok');
+  assert.equal(row.tw_score, 77);
+  assert.equal(row.tw_grade, 'A');
+  assert.equal(row.tw_pitch, 'No website.');
+});
