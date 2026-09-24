@@ -23,6 +23,7 @@ import * as gexport from './gmaps/export.mjs';
 import { layaDecide } from './gmaps/laya-client.mjs';
 import { gradeLead } from './gmaps/grade.mjs';
 import { enrichWebsite } from './gmaps/enrich.mjs';
+import { fetchText as sharedFetchText } from './gmaps/fetch.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -291,28 +292,7 @@ function extract(html, domain) {
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-async function fetchText(url) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, redirect: 'follow',
-      headers: { 'User-Agent': UA, 'Accept': 'text/html' } });
-    const ct = res.headers.get('content-type') || '';
-    if (!res.ok || !ct.includes('text/html')) return null;
-    const reader = res.body?.getReader();
-    if (!reader) return await res.text();
-    let received = 0, html = ''; const dec = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.length;
-      html += dec.decode(value, { stream: true });
-      if (received > MAX_HTML) { ctrl.abort(); break; }
-    }
-    return html;
-  } catch { return null; }
-  finally { clearTimeout(timer); }
-}
+const fetchText = (url) => sharedFetchText(url, { timeoutMs: TIMEOUT_MS, ua: UA, maxHtml: MAX_HTML });
 
 async function enrich(row) {
   const now = Date.now();
