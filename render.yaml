@@ -8,20 +8,16 @@ services:
   - type: web
     name: leadforge
     runtime: node
-    plan: starter          # 'starter' = persistent disk survives redeploys. 'free' works but disk is ephemeral (see DEPLOY.md).
+    plan: free             # free tier: no persistent disk, spins down when idle. Home sync.mjs re-populates leads each run.
     buildCommand: npm install
     startCommand: node server.mjs
     healthCheckPath: /login
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: DB_FILE
-        value: /data/leads.db
       - key: APP_PASSWORD
         sync: false          # set this yourself in the Render dashboard
       - key: SYNC_TOKEN
         generateValue: true  # Render generates it; copy into home sync.config.json
-    disk:
-      name: leadforge-data
-      mountPath: /data
-      sizeGB: 1
+    # To make data durable later: upgrade to plan: starter, add a disk mounted at
+    # /data, and set DB_FILE=/data/leads.db. (See DEPLOY.md.)
