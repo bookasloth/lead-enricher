@@ -44,6 +44,7 @@ if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith
   const { fetchText, fetchStatus } = await import('./fetch.mjs');
   const { initGmaps } = await import('./db.mjs');
   const db = new DatabaseSync('leads.db');
+  db.exec('PRAGMA busy_timeout=30000'); // wait out the server's writes instead of crashing on SQLITE_BUSY
   const q = initGmaps(db);
   const out = await regradeAll(q, { fetchText, fetchStatus });
   console.log('Timewheel regrade:', out);
