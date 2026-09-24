@@ -92,6 +92,8 @@ export function initGmaps(db) {
     ['geo_json', "TEXT DEFAULT '{}'"], ['audit_status', "TEXT DEFAULT 'pending'"],
     ['tw_score', 'INTEGER DEFAULT 0'], ['tw_grade', 'TEXT'], ['tw_priority', 'TEXT'],
     ['tw_gap_json', "TEXT DEFAULT '[]'"], ['tw_pitch', 'TEXT'],
+    // website segment: own | free_site | none ; platform = service or real host ; group = social|free_builder|directory
+    ['web_kind', 'TEXT'], ['web_platform', 'TEXT'], ['web_group', 'TEXT'],
   ]) {
     try { db.exec(`ALTER TABLE gmaps_leads ADD COLUMN ${col} ${type}`); } catch { /* column exists */ }
   }
@@ -155,6 +157,8 @@ export function initGmaps(db) {
       contacted_at=@contacted_at WHERE key=@key`),
     updateAudit: db.prepare(`UPDATE gmaps_leads SET
       audit_json=@audit_json, psi_json=@psi_json, geo_json=@geo_json, audit_status=@audit_status WHERE key=@key`),
+    updateWebKind: db.prepare(`UPDATE gmaps_leads SET
+      web_kind=@web_kind, web_platform=@web_platform, web_group=@web_group WHERE key=@key`),
     updateTwGrade: db.prepare(`UPDATE gmaps_leads SET
       tw_score=@tw_score, tw_grade=@tw_grade, tw_priority=@tw_priority,
       tw_gap_json=@tw_gap_json, tw_pitch=@tw_pitch WHERE key=@key`),
